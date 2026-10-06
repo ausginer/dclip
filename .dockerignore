@@ -1,0 +1,6 @@
+# The image build reads the workspace manifests and the host crate, nothing else.
+*
+!Cargo.toml
+!Cargo.lock
+!crates/host/Cargo.toml
+!crates/host/src

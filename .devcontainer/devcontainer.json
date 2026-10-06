@@ -1,0 +1,121 @@
+{
+  "name": "devcontainer-clipboard",
+  "image": "ghcr.io/ausginer/devimages/rust:latest",
+  "workspaceFolder": "/workspaces/devcontainer-clipboard",
+  "runArgs": [
+    "--name=devcontainer-clipboard",
+    "--memory=16g",
+    "--memory-swap=24g",
+  ],
+  "containerEnv": {
+    "CARGO_HOME": "/home/dev/.cargo",
+    "RUSTUP_HOME": "/usr/local/rustup",
+    "RUSTC_WRAPPER": "sccache",
+    "SCCACHE_DIR": "/home/dev/.cache/sccache",
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "CLAUDE_CONFIG_DIR": "/agents/claude",
+    "CODEX_HOME": "/agents/codex",
+    "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD": "1",
+    "ENABLE_LSP_TOOL": "1",
+    "SSH_AUTH_SOCK": "/ssh-agent",
+    "LANG": "C.UTF-8",
+    "LC_CTYPE": "C.UTF-8",
+  },
+  "forwardPorts": [9876, 6006, 5176, 24678],
+  "remoteUser": "dev",
+  "updateRemoteUserUID": true,
+  "mounts": [
+    {
+      "source": "${localEnv:HOME}/.gitconfig",
+      "target": "/home/dev/.gitconfig",
+      "type": "bind",
+    },
+    {
+      "source": "${localEnv:SSH_AUTH_SOCK}",
+      "target": "/ssh-agent",
+      "type": "bind",
+    },
+    {
+      "source": "${localWorkspaceFolderBasename}_nodemodules",
+      "target": "${containerWorkspaceFolder}/node_modules",
+      "type": "volume",
+    },
+    {
+      "source": "${localWorkspaceFolderBasename}_cargo",
+      "target": "/home/dev/.cargo",
+      "type": "volume",
+    },
+    {
+      "source": "${localWorkspaceFolderBasename}_target",
+      "target": "${containerWorkspaceFolder}/target",
+      "type": "volume",
+    },
+    {
+      "source": "${localWorkspaceFolderBasename}_sccache",
+      "target": "/home/dev/.cache/sccache",
+      "type": "volume",
+    },
+    {
+      "source": "${localEnv:HOME}/.codex",
+      "target": "/agents/codex",
+      "type": "bind",
+    },
+    {
+      "source": "${localEnv:HOME}/.config/gh",
+      "target": "/home/dev/.config/gh",
+      "type": "bind",
+    },
+
+    {
+      "source": "${localEnv:HOME}/.claude",
+      "target": "/agents/claude",
+      "type": "bind",
+    },
+    {
+      "source": "${localEnv:HOME}/.claude",
+      "target": "/home/node/.claude",
+      "type": "bind",
+    },
+    {
+      "source": "${localEnv:HOME}/.claude",
+      "target": "/home/dev/.claude",
+      "type": "bind",
+    },
+    {
+      "source": "${localEnv:HOME}/.claude.json",
+      "target": "/agents/claude/.claude.json",
+      "type": "bind",
+    },
+    {
+      "source": "${localEnv:HOME}/.claude.json",
+      "target": "/home/node/.claude.json",
+      "type": "bind",
+    },
+    {
+      "source": "${localEnv:HOME}/.claude.json",
+      "target": "/home/dev/.claude.json",
+      "type": "bind",
+    },
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "esbenp.prettier-vscode",
+        "dbaeumer.vscode-eslint",
+        "EditorConfig.EditorConfig",
+        "runem.lit-plugin",
+        "openai.chatgpt",
+        "vitest.explorer",
+        "github.vscode-github-actions",
+        "oxc.oxc-vscode",
+        "YoavBls.pretty-ts-errors",
+        "TypeScriptTeam.native-preview",
+        "eamodio.gitlens",
+        "unifiedjs.vscode-mdx",
+        "Anthropic.claude-code",
+      ],
+    },
+  },
+  "postCreateCommand": "bash .devcontainer/post-create.sh \"${containerWorkspaceFolder}\"",
+  "postStartCommand": "bash .devcontainer/on-start.sh \"${containerWorkspaceFolder}\"",
+}

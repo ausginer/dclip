@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "env": {
+    "HARNESS_EFFORT_GUARD_MODE": "enforce"
+  },
+  "extraKnownMarketplaces": {
+    "devcontainer-clipboard": {
+      "source": {
+        "source": "directory",
+        "path": "."
+      }
+    }
+  },
+  "enabledPlugins": {
+    "harness-effort-guard@devcontainer-clipboard": true
+  }
+}

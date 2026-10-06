@@ -1,0 +1,13 @@
+[package]
+name = "devcontainer-clipboard-host"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "claude-clipboard-host"
+path = "src/main.rs"
+
+[dependencies]
+libc = "0.2"
+serde_json = "1"
