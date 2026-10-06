@@ -1,5 +1,5 @@
 use super::*;
-use std::{os::unix::net::UnixStream, thread};
+use std::{io::IoSlice, os::unix::net::UnixStream, thread};
 
 const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\x00\xff\x00hello\n";
 
@@ -92,4 +92,48 @@ fn should_serve_an_image_when_another_listing_line_is_not_utf8() {
         })
     });
     assert_eq!(response.unwrap(), PNG);
+}
+
+/// A writer that accepts everything it is offered and counts its calls.
+#[derive(Default)]
+struct Counting {
+    bytes: Vec<u8>,
+    calls: usize,
+}
+
+impl Write for Counting {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.calls += 1;
+        self.bytes.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> io::Result<usize> {
+        self.calls += 1;
+        for buf in bufs {
+            self.bytes.extend_from_slice(buf);
+        }
+        Ok(bufs.iter().map(|buf| buf.len()).sum())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn should_frame_any_response_in_one_write_to_a_writer_that_takes_it_all() {
+    for result in [
+        Ok(PNG.to_vec()),
+        Err("a long error message with \"quotes\" and \u{e9}".into()),
+    ] {
+        let expected_size = result.as_ref().map_or(0, Vec::len);
+        let mut output = Counting::default();
+        write_response(&mut output, result).unwrap();
+        assert_eq!(output.calls, 1);
+        let split = output.bytes.iter().position(|byte| *byte == b'\n').unwrap();
+        let header: Value = serde_json::from_slice(&output.bytes[..split]).unwrap();
+        assert_eq!(header["size"], json!(expected_size));
+        assert_eq!(output.bytes.len() - split - 1, expected_size);
+    }
 }

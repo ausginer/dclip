@@ -4,7 +4,7 @@
 
 use crate::{Result, clipboard, clipboard::Query, image::Format};
 use serde_json::{Value, json};
-use std::io::{self, BufRead, BufReader, Read, Write};
+use std::io::{self, BufRead, BufReader, IoSlice, Read, Write};
 
 /// The longest request line, newline included.
 const REQUEST_LIMIT: usize = 4096;
@@ -98,6 +98,10 @@ pub(crate) fn process_request(reader: impl Read) -> Result<Vec<u8>> {
     respond_with(&request, clipboard::wayland)
 }
 
+/// Writes the header line and the payload. The header is serialised into its
+/// own buffer and leaves with the payload in one vectored write where the
+/// writer takes it all, so the number of writes does not depend on the
+/// header's content, and the payload is never copied to join it.
 pub(crate) fn write_response(mut output: impl Write, result: Result<Vec<u8>>) -> io::Result<()> {
     let (header, data) = match result {
         Ok(data) => (json!({"ok":true,"size":data.len()}), data),
@@ -106,9 +110,18 @@ pub(crate) fn write_response(mut output: impl Write, result: Result<Vec<u8>>) ->
             Vec::new(),
         ),
     };
-    serde_json::to_writer(&mut output, &header)?;
-    output.write_all(b"\n")?;
-    output.write_all(&data)?;
+    let mut header = serde_json::to_vec(&header)?;
+    header.push(b'\n');
+    let mut parts = [IoSlice::new(&header), IoSlice::new(&data)];
+    let mut parts = &mut parts[..];
+    while !parts.is_empty() {
+        match output.write_vectored(parts) {
+            Ok(0) => return Err(io::ErrorKind::WriteZero.into()),
+            Ok(written) => IoSlice::advance_slices(&mut parts, written),
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error),
+        }
+    }
     output.flush()
 }
 
