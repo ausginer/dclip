@@ -32,8 +32,8 @@ extern "C" fn wake(_: libc::c_int) {
 
 /// Makes SIGTERM, SIGINT and SIGHUP write a byte to a pipe and returns its
 /// read end, which is readable from then on, whichever thread the signal
-/// reached. The handlers set `SA_RESTART`, so the only call they interrupt is
-/// a wait that is meant to notice them.
+/// reached. The handlers set `SA_RESTART`, so interrupted reads and writes
+/// resume; `poll` never resumes, and every caller of [`poll`] retries it.
 pub(crate) fn wake_on_termination() -> io::Result<PipeReader> {
     let (reader, writer) = io::pipe()?;
     // A full pipe already holds a wake-up, so the handler never blocks.

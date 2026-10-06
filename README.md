@@ -8,7 +8,7 @@ current image from the Fedora Wayland clipboard. Inside the container, the
 | ---------------------- | -------------------------------------------------------------------- |
 | Fedora x86_64          | The built binary, the real `wl-paste`; `xsel` for text sync          |
 | Working devcontainer   | An existing Python 3, the shared directory, a PATH setting           |
-| Build environment      | Rust with the musl target, or Docker with the provided Dockerfile    |
+| Build environment      | Rust 1.89+ with the musl target, or Docker with the provided Dockerfile |
 
 Python, Cargo and rustc do not need to be installed on Fedora. The Python file
 lives in the shared directory but runs only inside the devcontainer. The binary
@@ -75,7 +75,8 @@ it: `--sync-text` below replaces it. Then run in a Fedora terminal:
 "$HOME/.local/share/claude-clipboard/claude-clipboard-host" serve --sync-text
 ```
 
-Leave the terminal open for now. `--sync-text` copies plain text into X11 with
+Leave the terminal open for now; closing it, Ctrl+C or SIGTERM stops the bridge,
+removes its socket and stops its text watcher. `--sync-text` copies plain text into X11 with
 `xsel`. It checks the current content first and skips offers that contain an
 image, including mixed offers where an image comes with a text representation.
 If you do not need this, run `serve` without `--sync-text`.
@@ -193,9 +194,24 @@ revoke access, stop the server or remove the mount.
 
 ## Tests and limitations
 
-The Rust tests cover the protocol, binary payloads, the peer UID, the Unix
-socket, child-process timeouts, and protecting text sync from mixed image
-offers. The Docker build runs them before building. From the repository root:
+The Rust tests run without Wayland or X11; stand-in `wl-paste` and `xsel`
+scripts take their place. They cover:
+
+- the protocol: request parsing, image type selection, the magic-byte check,
+  framing, and an image at the 64 MiB limit delivered byte-exact through the
+  socket;
+- the server as it runs: the command line and its exit status, the lock that
+  refuses a second instance, replacing a stale socket and refusing any other
+  file at its path, the peer UID check and the concurrency limit, a deadline on
+  each connection however slowly the peer sends or reads, and a clean exit on
+  SIGTERM, SIGINT or SIGHUP that waits for requests in flight;
+- tools: timeouts, reaping, and leaving alone the processes a tool that
+  succeeded started, such as the daemon `xsel` keeps to own the selection;
+- text sync: the whole decision sequence, including skipping offers with an
+  image and not rewriting text X11 already holds, and the watcher ending when
+  the bridge is killed.
+
+The Docker build runs them before building. From the repository root:
 
 ```bash
 cargo test
@@ -207,8 +223,8 @@ The Python tests cover the container wrapper's argument translation:
 python3 -m unittest discover -s . -p test_bridge.py -v
 ```
 
-Pasting end to end into Claude Code inside a devcontainer has not been verified
-yet. The check in step 5 separates the bridge working from the behaviour of a
+The host needs Linux 5.3 or later. Pasting end to end into Claude Code inside a
+devcontainer has not been verified yet. The check in step 5 separates the bridge working from the behaviour of a
 particular CLI or terminal.
 
 ## Sources

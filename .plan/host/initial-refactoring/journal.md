@@ -76,3 +76,56 @@ All probes ran in scratchpad copies. Nothing was added to the tree to take them.
 **One ordering difference.** `D-3` parses the request once, at the boundary, so a `read` naming an unsupported or non-string `type` is refused before the clipboard is listed, not after. The refusal text is unchanged; what differs is which error wins when the listing would also have failed, and that `wl-paste` is not run for a request that cannot succeed.
 
 **Measured.** Release musl binary: 619,264 bytes after the restructuring commit (no change), 611,072 after deleting `handle-stdio` (−8,192, −1.3%, within the ±2% the plan sets). The delta is the stdin/stdout-locked request path and its `Read`/`Write` instantiations; `cargo bloat` is not installed here, so the attribution is from what was removed rather than from a symbol listing.
+
+## 2026-10-06 — Phase 3: the findings fixed, one decision at a time (implementer)
+
+Each step began with a test that failed for the reason its finding predicts, then the fix, then green. One commit per step.
+
+| Step | Failing test first, and how it failed | Fix |
+| ---- | ------------------------------------- | --- |
+| 3.1 `D-5` | Both non-UTF-8 listing tests: `Utf8Error` | `clipboard::lines` over bytes |
+| 3.2 `D-6` | Counting writer: 15 writes for one response | Header in its own buffer, one `write_vectored` with the payload |
+| 3.3 `D-6` | Trickled request and slowly read response: each ran the peer's full 3 s against a 200 ms budget | `server::Deadline` |
+| 3.4 `D-4` | 64 MiB binary test: `wl-paste timed out`; reaped-child test: the group member was killed | Event-driven `capture`, `Tool` over `State` |
+| 3.5 `D-7` | SIGHUP: the process died with no exit code and left the socket; in-flight test: `serve` exited with its tool still running | Wake pipe, `thread::scope`, `admit`, `Bridge` |
+| 3.6 `D-8` | The stand-in watcher was still running 10 s after SIGKILL to `serve` | `PR_SET_PDEATHSIG` in `pre_exec` |
+
+**A phase-2 defect, found and fixed in 3.4.** In phase 2, `capture` marked success by assigning `tool = Tool::Reaped`. Assigning to a value with a `Drop` drops the old value, so the success path killed the tool's process group: the `xsel -i` selection daemon would have been killed after every sync. No test saw it, because no stand-in forked a survivor. The first version of the 3.4 fix repeated the mistake inside `try_reap`, and `should_not_signal_the_group_of_a_reaped_child` caught it. `Drop` now lives on `Tool`, a wrapper around `State`, so a state change drops only the `Child` handle. `should_leave_the_group_of_a_successful_tool_alone` pins the success path. The defect existed only in commits `b117205`–`b9b6686` on this branch.
+
+**`D-6`: socket timeouts were not enough.** The first deadline set `SO_RCVTIMEO` or `SO_SNDTIMEO` to the remaining time before each call. The slow-reader test still ran for 3 s: inside one large `writev` on a Unix stream socket, the kernel takes the timeout afresh for each buffer it allocates, so a reader that keeps draining slowly never lets a single call time out. Accepted streams are now non-blocking, and `Deadline` waits in `poll` for the remaining time. The required properties are met as stated. The mechanism is a different spelling from the decision's "every blocking call is given the time that remains", and is recorded here rather than as a new decision.
+
+**`F-6`'s per-connection paths have no failing-first test.** The paths that used to end `serve` were: `EINTR` between `poll` and `accept`, a failure of `set_*_timeout`, and a panic from `thread::spawn`. None can be provoked deterministically from a test. The fix is structural. The loop body has no `?` except on an `accept` error that is not about the connection. Per-connection failures go through `admit` or a refused spawn, and each is answered on the stream. The unit tests pin `admit`'s refusals and its release of a place.
+
+**Capture throughput after `D-4`** (the `I-1` loop as a temporary `#[ignore]`d test, release profile, same devcontainer; not committed):
+
+| Payload | Before (`I-1`) | After   |
+| ------- | -------------- | ------- |
+| 1 MiB   | 71 ms          | 1.7 ms  |
+| 8 MiB   | 567 ms         | 7 ms    |
+| 32 MiB  | 2.25 s         | 24 ms   |
+| 63 MiB  | 4.41 s         | 38 ms   |
+| 64 MiB  | timed out      | 38 ms   |
+
+Two runs each. The figures are `head` writing into a 64 KiB pipe. `F_SETPIPE_SZ` was not tried, because nothing is left for it to fix.
+
+**Measured.** Release musl binary 619,264 bytes. That is +8,192 bytes over phase 2's 611,072, and the same as the baseline. The added code is the poll-driven capture with its pidfd, the `Deadline` wrapper, the wake pipe and three handlers, scoped workers through `thread::Builder`, and `Arc` per connection. `cargo bloat` is not installed, so this is attribution by what was added, not a symbol listing. The normal dependency edges are still `libc` and `serde_json`.
+
+## 2026-10-06 — Phase 4: close (implementer)
+
+- `README.md` §Tests and limitations states what the layers cover, and that Linux 5.3 or later is required (for `pidfd_open`). The build table says Rust 1.89+. Step 2 says that closing the terminal stops the bridge cleanly.
+- The register marks `D-1`–`D-10` implemented, each with a `§Implemented` sub-clause naming its sites and tests, and `F-1`–`F-9` settled.
+
+**Final measurements against the baseline (`I-1`):**
+
+- Binary: 619,264 bytes, unchanged.
+- Tests: 50, up from 13. That is 33 unit and OS-boundary tests in sibling files, and 17 binary-level tests.
+- Capture: 63 MiB in 38 ms, against 4.41 s.
+
+The Python suite passes and is untouched.
+
+**Waiting:**
+
+- **Owner:** the manual end-to-end check on Fedora that `plan.md` §Phase 4 lists: README step 5, one large screenshot, and one `--sync-text` session.
+- **Owner:** the review round, for a fresh `consolidator`.
+- **Owner:** the Docker image build. It has not been run, because this devcontainer has no Docker CLI.
+- `Q-1`, out of scope as asked.

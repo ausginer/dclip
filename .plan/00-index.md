@@ -18,7 +18,7 @@ Entries are append-only and dated. A substantive amendment to a decision mints a
 
 #### D-1 — The host crate is split into modules by responsibility, and `unsafe` lives in one of them
 
-2026-10-06 · Accepted, not implemented · Addresses `F-7` · Alternatives in [`decisions.md`](host/initial-refactoring/decisions.md)
+2026-10-06 · Accepted · Implemented 2026-10-06 · Addresses `F-7` · Alternatives in [`decisions.md`](host/initial-refactoring/decisions.md)
 
 `crates/host/src/main.rs` carries the protocol policy, child-process management, the server lifecycle, text sync and nine `unsafe` blocks in one 572-line file. The responsibilities change for different reasons and are tested by different layers, so each gets a module, and every FFI call moves behind a safe function in one module that is the only place the compiler permits `unsafe`.
 
@@ -34,9 +34,15 @@ Required properties:
 - The `flock` call is replaced by `std::fs::File::try_lock`; `peer_uid` stays on `libc` because `UnixStream::peer_cred` is unstable (`I-2`).
 - The restructuring commit changes no behaviour: every test that passed before it passes after it unchanged, apart from test-module moves.
 
+##### D-1 §Implemented
+
+2026-10-06 · Branch `host/initial-refactoring`.
+
+Modules `cli`, `clipboard`, `image`, `process`, `protocol`, `server`, `sync` and `sys` under `crates/host/src/`. `sys.rs` alone carries `#![allow(unsafe_code)]`; the workspace `[lints]` table denies `unsafe_code`, `clippy::undocumented_unsafe_blocks` and `clippy::unwrap_used`, and `clippy.toml` allows `unwrap` in tests. `rust-version` is 1.89. The lock is `File::try_lock` in `server::serve`; `sys::peer_uid` stays on `libc`.
+
 #### D-2 — Unit tests live in sibling files, and the binary gains a black-box test layer
 
-2026-10-06 · Accepted, not implemented · Addresses `F-7`, `F-9` · Amends `CONTRIBUTING.md` §Tests and `.agents/docs/test-architecture.md` §The layers
+2026-10-06 · Accepted · Implemented 2026-10-06 · Addresses `F-7`, `F-9` · Amends `CONTRIBUTING.md` §Tests and `.agents/docs/test-architecture.md` §The layers
 
 Two changes to where tests live.
 
@@ -56,9 +62,15 @@ Required properties:
 - `crates/host/Dockerfile` and `.dockerignore` admit `crates/host/tests`, so the image build runs the layer before exporting the binary.
 - `test-architecture.md` §The layers and §Failure interpretation describe the new layer; `README.md` §Tests and limitations states what it covers.
 
+##### D-2 §Implemented
+
+2026-10-06 · Branch `host/initial-refactoring`.
+
+Sibling `tests.rs` files beside `image`, `process`, `protocol`, `server`, `sync` and `sys`. The binary layer is one target, `crates/host/tests/binary/`, with `support.rs` and modules `cli`, `protocol`, `server` and `sync`. `Dockerfile` and `.dockerignore` admit it; the image build was not run, because no Docker CLI was available (journal). `CONTRIBUTING.md` §Tests and `test-architecture.md` carry the amendment and their change records; `README.md` §Tests and limitations states the coverage.
+
 #### D-3 — Domain values are types: image formats, requests, clipboard queries and commands
 
-2026-10-06 · Accepted, not implemented · Addresses `F-7` · Measured in `I-3`
+2026-10-06 · Accepted · Implemented 2026-10-06 · Addresses `F-7` · Measured in `I-3`
 
 The host passes MIME types, operations, `wl-paste` argument arrays and subcommands around as strings. Each becomes a closed type, parsed once at the boundary where the string arrives.
 
@@ -76,9 +88,15 @@ Required properties:
 - The response policy remains testable without Wayland through the query closure (`test-architecture.md` §The layers).
 - User-facing error text is unchanged except where another decision changes it.
 
+##### D-3 §Implemented
+
+2026-10-06 · Branch `host/initial-refactoring`.
+
+`image::Format` (with `ALL` in declaration order, pinned by `should_list_formats_in_declaration_order`), `protocol::Request::parse`, `clipboard::Query` as the seam of `protocol::respond_with` and `sync::sync_text`, `cli::Command` and `cli::ServeOptions`. A `read` naming an unsupported `type` is now refused before the clipboard is listed; the message is unchanged.
+
 #### D-4 — A tool is read event-driven, under one total deadline, by a guard that always reaps
 
-2026-10-06 · Accepted, not implemented · Addresses `F-1`, `F-7` · Measured in `I-1`
+2026-10-06 · Accepted · Implemented 2026-10-06 · Addresses `F-1`, `F-7` · Measured in `I-1`
 
 `capture` reads at most 16 KiB and then sleeps 1 ms, so throughput is capped near 14 MiB/s and a 63 MiB image misses its 4 s bound (`F-1`). The wait becomes event-driven: the capturing thread blocks until the tool's stdout is readable, the tool has exited, or the deadline has passed, whichever comes first, using `poll` over the stdout pipe and a pidfd for the child. Child exit is observed through the pidfd rather than by polling `try_wait`, so no fixed-interval wait remains anywhere in the capture.
 
@@ -95,9 +113,15 @@ Required properties:
 - A binary-level test delivers a 64 MiB image (the limit) through the socket from a stand-in `wl-paste` and asserts it arrives byte-exact, under the production deadline.
 - Re-measured as `I-1` measured it, on the same machine: a 63 MiB capture completes in well under its 4 s bound, and the figure is recorded in the journal.
 
+##### D-4 §Implemented
+
+2026-10-06 · Branch `host/initial-refactoring`.
+
+`process::capture` waits in `sys::poll` on the stdout pipe and a `sys::pidfd_open` descriptor under one deadline, reading with `read_to_end` through `take(LIMIT + 1 - len)` into the returned buffer. `process::Tool` wraps `State::{Unreaped, Reaped}`; `Drop` lives on the wrapper so that the transition to `Reaped` never signals. Tests: `should_not_signal_the_group_of_a_reaped_child`, `should_leave_the_group_of_a_successful_tool_alone`, `should_refuse_output_over_the_limit`, and the binary `should_deliver_an_image_at_the_64_mib_limit_byte_exact`. Re-measured: 63 MiB in about 38 ms (journal).
+
 #### D-5 — The clipboard's type listing is parsed as bytes
 
-2026-10-06 · Accepted, not implemented · Addresses `F-4`
+2026-10-06 · Accepted · Implemented 2026-10-06 · Addresses `F-4`
 
 `wl-paste --list-types` returns whatever MIME strings the source application offered, and one non-UTF-8 entry currently fails the whole request (`F-4`). Supported types are ASCII, so the listing is split and matched as bytes, and a line that is not a supported type is skipped whatever it contains.
 
@@ -108,9 +132,15 @@ Required properties:
 - Text sync's rule is unchanged: it proceeds only when no line starts with `image/` and some line starts with `text/plain`, and both tests are byte prefixes.
 - A unit test pins a listing that mixes a supported type with a non-UTF-8 line.
 
+##### D-5 §Implemented
+
+2026-10-06 · Branch `host/initial-refactoring`.
+
+`clipboard::lines` splits a listing as bytes; `protocol::offered` and `sync::may_sync_text` compare bytes. Tests: `should_serve_an_image_when_another_listing_line_is_not_utf8`, `should_sync_plain_text_when_another_listing_line_is_not_utf8`.
+
 #### D-6 — Each connection phase has a total deadline, and the header is framed in one buffer
 
-2026-10-06 · Accepted, not implemented · Addresses `F-2`, `F-5`
+2026-10-06 · Accepted · Implemented 2026-10-06 · Addresses `F-2`, `F-5`
 
 Socket timeouts in `std` bound a single syscall, so a peer that sends one byte at a time holds a worker for as long as it likes, and sixteen such peers lock everyone else out (`F-2`). The request read and the response write each get a total deadline measured from the start of the phase, and every blocking call is given the time that remains.
 
@@ -124,9 +154,15 @@ Required properties:
 - A response is the header, a newline and the payload, written in a number of syscalls that does not depend on the header's content. The payload is never copied to join it to the header.
 - The header's bytes are unchanged: `{"ok":true,"size":N}` or `{"ok":false,"size":0,"error":"…"}` followed by a newline.
 
+##### D-6 §Implemented
+
+2026-10-06 · Branch `host/initial-refactoring`.
+
+`server::Deadline` makes the stream non-blocking and waits in `sys::poll` for the time remaining; per-call socket timeouts were not enough, because the kernel re-arms `SO_SNDTIMEO` within one large write. `protocol::write_response` serialises the header into its own buffer and sends it with the payload by `write_vectored`. Tests: `should_frame_any_response_in_one_write_to_a_writer_that_takes_it_all`, `should_fail_a_trickled_request_within_its_deadline`, `should_fail_a_slowly_read_response_within_its_deadline`.
+
 #### D-7 — The server wakes on events, joins its workers, and survives a failed connection
 
-2026-10-06 · Accepted, not implemented · Addresses `F-6` · Mechanism chosen by `I-2`
+2026-10-06 · Accepted · Implemented 2026-10-06 · Addresses `F-6` · Mechanism chosen by `I-2`
 
 Shutdown currently relies on a flag checked after a 1 s `poll` timeout, because a signal may be delivered to a worker thread (`F-6`). The signal handler instead writes one byte to a non-blocking pipe, and the accept loop waits on the listener and the pipe with no timeout. `signalfd` was the alternative and is rejected: it needs SIGTERM and SIGINT blocked in every thread, and `std::process::Command` passes the blocked mask to every tool it spawns (`I-2`), so `wl-paste`, `xsel` and every sync process would then ignore SIGTERM.
 
@@ -141,9 +177,15 @@ Required properties:
 - Cleanup order is a property of the types: the watcher stops first, then the socket path is removed, then the listener closes, then the lock is released last, because an instance that unlocks before removing its path can delete the socket a successor has just bound. The order is stated where it is enforced.
 - The concurrency limit stays at 16. Each refusal message is unchanged.
 
+##### D-7 §Implemented
+
+2026-10-06 · Branch `host/initial-refactoring`.
+
+`sys::wake_on_termination` installs SIGTERM, SIGINT and SIGHUP handlers with `SA_RESTART` that write to a leaked, non-blocking pipe end; the accept loop in `server::serve` polls the listener and the pipe with no timeout, inside `thread::scope`, starting workers with `Builder::spawn_scoped`. `server::Bridge` states the cleanup order by field order. `server::admit` refuses per connection. Tests: binary `should_reap_an_in_flight_requests_tool_before_exiting_on_a_signal` and `should_remove_the_socket_and_exit_0_on_a_termination_signal` (now with SIGHUP); unit `should_refuse_a_peer_whose_uid_is_not_allowed`, `should_refuse_a_connection_while_every_place_is_taken`, `should_release_a_place_when_its_connection_is_done`.
+
 #### D-8 — The text-sync watcher cannot outlive the bridge
 
-2026-10-06 · Accepted, not implemented · Addresses `F-3`
+2026-10-06 · Accepted · Implemented 2026-10-06 · Addresses `F-3`
 
 `wl-paste --watch` is killed only when the bridge exits through its destructors, so a bridge killed by SIGKILL or the OOM killer leaves the watcher running under init (`F-3`). The watcher is started with the parent-death signal set to SIGKILL, in the child before `exec`.
 
@@ -154,9 +196,15 @@ Required properties:
 - The watcher is spawned from the thread that lives for the whole of `serve`, because the parent-death signal follows the thread that forked, not the process.
 - A sync process already running when the watcher dies runs to completion within its own tool deadlines. It is not tracked further.
 
+##### D-8 §Implemented
+
+2026-10-06 · Branch `host/initial-refactoring`.
+
+`sys::kill_with_parent` sets `PR_SET_PDEATHSIG` to SIGKILL in `pre_exec` and fails the spawn if the parent has already changed; `clipboard::watch` uses it, called from `server::serve` on the main thread. Test: binary `should_end_the_watcher_when_serve_is_killed`.
+
 #### D-9 — The `handle-stdio` subcommand is deleted
 
-2026-10-06 · Accepted, not implemented · Addresses `F-8`
+2026-10-06 · Accepted · Implemented 2026-10-06 · Addresses `F-8`
 
 `handle-stdio` answers one request from stdin with no peer check. It is undocumented, absent from the usage line, and has no caller in the repository, `setup-host.sh` or the shim. Nothing is released (`CONTRIBUTING.md` §8), so it is deleted rather than documented. The binary-level tests of `D-2` reach the protocol through `serve`, which is the published surface.
 
@@ -165,9 +213,15 @@ Required properties:
 - The binary accepts `serve [--sync-text] [--allow-uid UID]…` and `sync-text`, and nothing else.
 - Any other invocation prints the usage line and exits with status 1, and a binary-level test pins that.
 
+##### D-9 §Implemented
+
+2026-10-06 · Branch `host/initial-refactoring`.
+
+Deleted from `cli::parse` and `main`. Test: binary `should_refuse_handle_stdio_as_an_unpublished_invocation`.
+
 #### D-10 — Text sync's decision sequence is testable without Wayland or X11, and unchanged
 
-2026-10-06 · Accepted, not implemented · Addresses `F-9`
+2026-10-06 · Accepted · Implemented 2026-10-06 · Addresses `F-9`
 
 Only the type filter of text sync has a test. The sequence around it has none, and the equality check in that sequence is what stops sync feeding back into itself through XWayland. The sequence is: honour `CLIPBOARD_STATE`, list the types, filter them, read the text, compare with X11, list and filter again, write. It moves behind the same kind of seam the response policy has: the tool calls are passed in.
 
@@ -187,13 +241,19 @@ Required properties:
   - the state filter;
   - that the write carries exactly the text that was read.
 
+##### D-10 §Implemented
+
+2026-10-06 · Branch `host/initial-refactoring`.
+
+`sync::sync_text(state, wayland, x11_text, set_x11_text)`, with `sync::run` draining stdin and reading `CLIPBOARD_STATE`. Tests in `sync/tests.rs`: `should_write_exactly_the_text_that_was_read`, `should_skip_the_write_when_x11_already_holds_the_text`, `should_treat_a_failed_x11_read_as_different_text`, `should_skip_the_write_when_an_image_appears_by_the_second_listing`, `should_sync_only_in_the_data_and_sensitive_states`; binary `should_write_offered_plain_text_to_x11`.
+
 ---
 
 ## Findings
 
 #### F-1 — Tool capture is capped near 14 MiB/s, so images close to the limit time out
 
-2026-10-06 · Tier A · Open; settled by `D-4` · Evidence `I-1`
+2026-10-06 · Tier A · Settled 2026-10-06 by `D-4` · Evidence `I-1`
 
 `capture` in `crates/host/src/main.rs` reads into a 16 KiB chunk and then sleeps 1 ms on every loop iteration, data or not. Measured: 1 MiB in 71 ms, 32 MiB in 2.2 s, 63 MiB in 4.4 s. Under the 4 s bound that `wl-paste` reads get, any image above roughly 56 MiB fails with `wl-paste timed out`, although the documented limit is 64 MiB, and a 30 MiB screenshot costs about 2 s of paste latency for nothing.
 
@@ -201,7 +261,7 @@ Required property: capture time is bounded by the producer, not by the host's wa
 
 #### F-2 — A slow peer holds a worker slot without bound
 
-2026-10-06 · Tier A · Open; settled by `D-6` · Evidence `I-2`
+2026-10-06 · Tier A · Settled 2026-10-06 by `D-6` · Evidence `I-2`
 
 `serve` sets 12 s read and write timeouts on each accepted stream, and `std` applies them per syscall. `process_request` reads the request line with `read_until`, which issues one read for each byte as it arrives. Measured: a peer sending one byte every 10 s still held its connection after 30 s, with no response sent. Allowing for the 4096-byte request limit, one such peer holds a slot for up to about 13 h. Sixteen of them make the bridge answer everyone with `too many concurrent clipboard requests`. The response write has the same shape against a peer that reads a 64 MiB payload slowly. The peer is outside the trust boundary, so any bytes at any timing are in the contract.
 
@@ -209,7 +269,7 @@ Required property: every phase of a connection completes or fails within a total
 
 #### F-3 — The text-sync watcher outlives a bridge that is killed
 
-2026-10-06 · Tier A · Open; settled by `D-8` · Evidence `I-2`
+2026-10-06 · Tier A · Settled 2026-10-06 by `D-8` · Evidence `I-2`
 
 With `--sync-text`, `serve` starts `wl-paste --watch claude-clipboard-host sync-text` in its own process group, and only the guard's `Drop` kills it. Measured: after SIGKILL to the bridge, the watcher was still running with parent PID 1. It keeps writing every text copy into X11, and a restarted bridge starts a second watcher beside it. SIGHUP, which a closing terminal sends, has the same default action of terminating without running destructors; that case follows from the same mechanism and was not run separately.
 
@@ -217,7 +277,7 @@ Required property: the watcher never outlives the serving process, however that 
 
 #### F-4 — A non-UTF-8 entry in the clipboard's type listing fails every image read
 
-2026-10-06 · Tier A · Open; settled by `D-5` · Evidence `I-2`
+2026-10-06 · Tier A · Settled 2026-10-06 by `D-5` · Evidence `I-2`
 
 `respond_with` and `sync_text` validate the entire `wl-paste --list-types` output as UTF-8 before looking at any line. Measured: a listing of `image/png` plus a line containing byte `0xff` makes a read of `image/png` fail with a `Utf8Error`. The listing comes from whichever application owns the clipboard, so this is the environment's input.
 
@@ -225,7 +285,7 @@ Required property: a listing line that is not a supported type is ignored, whate
 
 #### F-5 — The response header is written as one syscall per JSON token
 
-2026-10-06 · Tier C · Open; settled by `D-6` · Evidence `I-2`
+2026-10-06 · Tier C · Settled 2026-10-06 by `D-6` · Evidence `I-2`
 
 `write_response` hands the unbuffered `UnixStream` to `serde_json::to_writer`. Traced: a successful response's header costs 14 `sendto` calls — `{`, `"`, `ok`, `"`, `:`, … — before the single call that sends the payload.
 
@@ -233,7 +293,7 @@ Required property: a response leaves in a number of writes independent of the he
 
 #### F-6 — Shutdown waits on a timer, abandons in-flight workers, and a per-connection failure can stop the server
 
-2026-10-06 · Tier A · Open; settled by `D-7` · Evidence: code reading, [`analysis.md`](host/initial-refactoring/analysis.md) §Server lifecycle
+2026-10-06 · Tier A · Settled 2026-10-06 by `D-7` · Evidence: code reading, [`analysis.md`](host/initial-refactoring/analysis.md) §Server lifecycle
 
 Three defects in `serve`, `crates/host/src/main.rs`:
 
@@ -247,7 +307,7 @@ Required property: shutdown is prompt and event-driven, `serve` returns only aft
 
 #### F-7 — The host is one file with stringly-typed values, scattered `unsafe` and inline tests
 
-2026-10-06 · Tier C · Open; settled by `D-1`, `D-2`, `D-3`
+2026-10-06 · Tier C · Settled 2026-10-06 by `D-1`, `D-2`, `D-3`
 
 The whole host is `crates/host/src/main.rs`:
 
@@ -264,7 +324,7 @@ Required property: see the required properties of `D-1`, `D-2` and `D-3`.
 
 #### F-8 — `handle-stdio` is an unpublished subcommand with no caller
 
-2026-10-06 · Tier C · Open; settled by `D-9`
+2026-10-06 · Tier C · Settled 2026-10-06 by `D-9`
 
 `main` accepts `handle-stdio`, which serves one request from stdin to stdout. It is not in the usage line or the README, and nothing in the repository invokes it.
 
@@ -272,7 +332,7 @@ Required property: the binary's subcommands are exactly the published ones.
 
 #### F-9 — The server lifecycle, text-sync sequence and large payloads have no test
 
-2026-10-06 · Tier C · Open; settled by `D-2`, `D-4`, `D-10`
+2026-10-06 · Tier C · Settled 2026-10-06 by `D-2`, `D-4`, `D-10`
 
 No test exercises:
 

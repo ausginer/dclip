@@ -2,7 +2,7 @@
 
 Turn `crates/host` from a single script-shaped file into a structured crate that is typed and fast, tested in separate files and at the binary's own surface, and that fixes the defects the analysis found on the way.
 
-**Status:** decided and planned on 2026-10-06; not implemented. Next: phase 1 of the plan, by an implementer.
+**Status:** implemented on 2026-10-06 (phases 1–4; see the journal). Next: the owner's end-to-end check on Fedora and a review round.
 
 ## Reading order
 
