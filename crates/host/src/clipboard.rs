@@ -22,6 +22,17 @@ pub(crate) enum Query {
     Text,
 }
 
+/// The lines of a type listing, as `str::lines` splits them but over bytes: a
+/// listing holds whatever the source application offered, and need not be
+/// UTF-8. Every supported type is ASCII, so byte comparison loses nothing.
+pub(crate) fn lines(listing: &[u8]) -> impl Iterator<Item = &[u8]> {
+    listing
+        .strip_suffix(b"\n")
+        .unwrap_or(listing)
+        .split(|byte| *byte == b'\n')
+        .map(|line| line.strip_suffix(b"\r").unwrap_or(line))
+}
+
 const WAYLAND_DEADLINE: Duration = Duration::from_secs(4);
 
 pub(crate) fn wayland(query: Query) -> Result<Vec<u8>> {

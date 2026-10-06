@@ -53,17 +53,17 @@ fn sync(state: Option<&str>, wayland: &Wayland, x11: Result<Vec<u8>>) -> Option<
 
 #[test]
 fn should_not_sync_text_when_an_image_is_offered() {
-    assert!(!may_sync_text(b"image/png\ntext/plain\n").unwrap());
+    assert!(!may_sync_text(b"image/png\ntext/plain\n"));
 }
 
 #[test]
 fn should_sync_plain_text_offers() {
-    assert!(may_sync_text(b"text/plain;charset=utf-8\ntext/plain\n").unwrap());
+    assert!(may_sync_text(b"text/plain;charset=utf-8\ntext/plain\n"));
 }
 
 #[test]
 fn should_not_sync_text_without_a_plain_text_offer() {
-    assert!(!may_sync_text(b"text/html\n").unwrap());
+    assert!(!may_sync_text(b"text/html\n"));
 }
 
 #[test]
@@ -116,4 +116,9 @@ fn should_sync_only_in_the_data_and_sensitive_states() {
             "{state:?}"
         );
     }
+}
+
+#[test]
+fn should_sync_plain_text_when_another_listing_line_is_not_utf8() {
+    assert!(may_sync_text(b"text/x-\xff\ntext/plain\n"));
 }

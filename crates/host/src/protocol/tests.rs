@@ -82,3 +82,14 @@ fn should_preserve_binary_payload_across_a_socket() {
     let split = output.iter().position(|byte| *byte == b'\n').unwrap();
     assert_eq!(&output[split + 1..], PNG);
 }
+
+#[test]
+fn should_serve_an_image_when_another_listing_line_is_not_utf8() {
+    let response = respond_with(br#"{"op":"read","type":"image/png"}"#, |query| {
+        Ok(match query {
+            Query::Types => b"image/png\ntext/x-\xff\n".to_vec(),
+            Query::Image(_) | Query::Text => PNG.to_vec(),
+        })
+    });
+    assert_eq!(response.unwrap(), PNG);
+}

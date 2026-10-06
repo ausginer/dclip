@@ -47,11 +47,11 @@ impl Request {
 }
 
 /// The supported formats `listing` offers, in preference order, each once.
-fn offered(listing: &[u8]) -> Result<impl Iterator<Item = Format> + '_> {
-    let listing = std::str::from_utf8(listing)?;
-    Ok(Format::ALL
-        .into_iter()
-        .filter(move |format| listing.lines().any(|line| line == format.mime())))
+/// A line that is not a supported type is skipped, whatever its bytes.
+fn offered(listing: &[u8]) -> impl Iterator<Item = Format> + '_ {
+    Format::ALL.into_iter().filter(move |format| {
+        clipboard::lines(listing).any(|line| line == format.mime().as_bytes())
+    })
 }
 
 /// Answers one request line: one listing, then at most one read, whose bytes
@@ -62,7 +62,7 @@ pub(crate) fn respond_with(
 ) -> Result<Vec<u8>> {
     let request = Request::parse(request)?;
     let listing = clipboard(Query::Types)?;
-    let mut offered = offered(&listing)?;
+    let mut offered = offered(&listing);
     let format = match request {
         Request::Types => {
             let mut response = Vec::new();

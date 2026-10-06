@@ -19,10 +19,9 @@ pub(crate) fn run() -> Result<()> {
 }
 
 /// Whether an offer listed as `types` is plain text with no image in it.
-fn may_sync_text(types: &[u8]) -> Result<bool> {
-    let types = std::str::from_utf8(types)?;
-    Ok(!types.lines().any(|mime| mime.starts_with("image/"))
-        && types.lines().any(|mime| mime.starts_with("text/plain")))
+fn may_sync_text(types: &[u8]) -> bool {
+    !clipboard::lines(types).any(|mime| mime.starts_with(b"image/"))
+        && clipboard::lines(types).any(|mime| mime.starts_with(b"text/plain"))
 }
 
 /// The sync sequence, with the tools passed in. `state` is the watcher's
@@ -36,7 +35,7 @@ pub(crate) fn sync_text(
     if state.is_some_and(|state| !matches!(state, "data" | "sensitive")) {
         return Ok(());
     }
-    if !may_sync_text(&wayland(Query::Types)?)? {
+    if !may_sync_text(&wayland(Query::Types)?) {
         return Ok(());
     }
     let text = wayland(Query::Text)?;
@@ -48,7 +47,7 @@ pub(crate) fn sync_text(
     }
     // A second listing narrows the window in which a freshly copied image
     // could be overwritten by text. Only the compositor could close it.
-    if !may_sync_text(&wayland(Query::Types)?)? {
+    if !may_sync_text(&wayland(Query::Types)?) {
         return Ok(());
     }
     set_x11_text(text)
