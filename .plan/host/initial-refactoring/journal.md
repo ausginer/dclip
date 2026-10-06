@@ -61,3 +61,18 @@ All probes ran in scratchpad copies. Nothing was added to the tree to take them.
 **Not done.** The Docker CLI is not installed in this devcontainer, so the image build was not run and whether it runs the new layer is unconfirmed. `cargo test --locked --target x86_64-unknown-linux-musl`, the command the image runs, passes here.
 
 **Measured.** Release musl binary 619,264 bytes, unchanged from `I-1`, as expected with no source change.
+
+## 2026-10-06 — Phase 2: restructure with no change in behaviour (implementer)
+
+**Done**, in two commits rather than the plan's seven steps, because steps 1–6 rewrite the same lines and an intermediate split without types would have been written only to be replaced:
+
+- Workspace `[lints]`: `unsafe_code`, `clippy::undocumented_unsafe_blocks` and `clippy::unwrap_used` at deny; `rust-version` 1.89; `clippy.toml` sets `allow-unwrap-in-tests`. That setting reaches `#[test]` functions only, so `tests/binary/support.rs` carries a narrow `allow` with its reason.
+- Modules as `D-1` lists them — `cli`, `image`, `protocol`, `clipboard`, `process`, `server`, `sync`, `sys` — with tests in sibling `tests.rs` files. `rg -n unsafe crates/host/src` finds nothing outside `sys.rs`. `flock` is `File::try_lock`.
+- `D-3` types: `Format` (declaration order is preference order, pinned by a test), `Request` parsed by hand from `Value`, `Query` as the clipboard seam, `cli::Command` and `ServeOptions`. The unit tests changed only their mock.
+- `Tool { Unreaped(Child), Reaped }` replaces `ChildGuard(Child, bool)`. As the plan asks, capture still marks it `Reaped` only on success, so a child that exited non-zero is still signalled; phase 3 makes the variant tell the truth, with the test that shows the difference.
+- `D-10`: `sync::sync_text` takes the state and three tool closures. Unit tests pin the X11-equal skip, a failed X11 read counting as different, the image appearing by the second listing (with the query order), the state filter, and that the write carries exactly the text read.
+- `D-9`: `handle-stdio` deleted; a binary test pins it as a usage error. The `CONTRIBUTING.md` and `test-architecture.md` sibling-file amendment landed with the split, with its change-record entries.
+
+**One ordering difference.** `D-3` parses the request once, at the boundary, so a `read` naming an unsupported or non-string `type` is refused before the clipboard is listed, not after. The refusal text is unchanged; what differs is which error wins when the listing would also have failed, and that `wl-paste` is not run for a request that cannot succeed.
+
+**Measured.** Release musl binary: 619,264 bytes after the restructuring commit (no change), 611,072 after deleting `handle-stdio` (−8,192, −1.3%, within the ±2% the plan sets). The delta is the stdin/stdout-locked request path and its `Read`/`Write` instantiations; `cargo bloat` is not installed here, so the attribution is from what was removed rather than from a symbol listing.

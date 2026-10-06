@@ -8,7 +8,6 @@ pub(crate) const USAGE: &str = "Usage: claude-clipboard-host serve [--sync-text]
 pub(crate) enum Command {
     Serve(ServeOptions),
     SyncText,
-    HandleStdio,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -37,7 +36,6 @@ pub(crate) fn parse(args: &[String]) -> Result<Command> {
             Ok(Command::Serve(parsed))
         }
         [command] if command == "sync-text" => Ok(Command::SyncText),
-        [command] if command == "handle-stdio" => Ok(Command::HandleStdio),
         _ => Err(USAGE.into()),
     }
 }
