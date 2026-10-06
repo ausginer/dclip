@@ -59,3 +59,20 @@ fn should_refuse_a_request_over_4096_bytes() {
     let response = server.request(&line);
     assert_eq!(response.header["ok"], false);
 }
+
+#[test]
+fn should_deliver_an_image_at_the_64_mib_limit_byte_exact() {
+    let scratch = Scratch::new();
+    let mut image = vec![0; 64 * 1024 * 1024];
+    image[..PNG.len()].copy_from_slice(PNG);
+    let last = image.len() - 1;
+    image[last] = 0xff;
+    scratch.clipboard(b"image/png\n", &image);
+    let server = scratch.serve(&[]);
+    let response = server.request(b"{\"op\":\"read\",\"type\":\"image/png\"}\n");
+    assert_eq!(
+        response.header,
+        serde_json::json!({"ok": true, "size": image.len()})
+    );
+    assert!(response.payload == image, "payload differs");
+}

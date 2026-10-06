@@ -6,7 +6,7 @@ use std::{
     io,
     marker::PhantomData,
     os::{
-        fd::{AsRawFd, BorrowedFd},
+        fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd},
         unix::net::UnixStream,
     },
     sync::atomic::{AtomicBool, Ordering},
@@ -124,6 +124,19 @@ pub(crate) fn set_nonblocking(fd: BorrowedFd<'_>) -> io::Result<()> {
         return Err(io::Error::last_os_error());
     }
     Ok(())
+}
+
+/// A descriptor that becomes readable when process `pid` exits. It refers to
+/// that process and no other, even after its PID is reused.
+pub(crate) fn pidfd_open(pid: u32) -> io::Result<OwnedFd> {
+    // SAFETY: `pidfd_open` takes a PID and flags, and no pointers.
+    let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid as libc::pid_t, 0) };
+    if fd < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: the kernel has just returned this descriptor, open and
+    // close-on-exec, and nothing else owns it.
+    Ok(unsafe { OwnedFd::from_raw_fd(fd as RawFd) })
 }
 
 /// Sends SIGKILL to the process group `group`. The caller guarantees the group

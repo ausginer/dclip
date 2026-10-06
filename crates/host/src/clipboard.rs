@@ -3,7 +3,7 @@
 use crate::{
     Result,
     image::Format,
-    process::{Tool, capture},
+    process::{Tool, capture, spawn},
 };
 use std::{
     io,
@@ -59,7 +59,7 @@ pub(crate) fn set_x11_text(text: Vec<u8>) -> Result<()> {
 /// Starts `wl-paste --watch`, which runs `executable sync-text` on every
 /// clipboard change.
 pub(crate) fn watch(executable: &Path) -> io::Result<Tool> {
-    Tool::spawn(
+    spawn(
         Command::new("wl-paste")
             .arg("--watch")
             .arg(executable)
@@ -67,4 +67,5 @@ pub(crate) fn watch(executable: &Path) -> io::Result<Tool> {
             .stdin(Stdio::null())
             .stdout(Stdio::null()),
     )
+    .map(Tool::new)
 }
