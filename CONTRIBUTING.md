@@ -91,26 +91,28 @@ The rule is about meaning, not byte count. Where both spellings are correct, the
 
 ## Tests
 
-- **A Rust test module is `#[cfg(test)] mod tests` beside the code it tests.** It keeps crate-private access, so the host publishes nothing for its tests.
+- **A Rust unit test module lives in a sibling file.** A module `foo.rs` declares `#[cfg(test)] mod tests;` and its tests live in `foo/tests.rs`, so they keep crate-private access, the host publishes nothing for them, and the production file reads without them. No `#[test]` function sits in a production file.
 - **The built binary is tested under `crates/host/tests/`**, through what a user reaches — its arguments, exit status, stderr, socket and signals — with stand-in `wl-paste` and `xsel` scripts first on its `PATH`. Those tests need nothing beyond `/bin/sh` and coreutils, and add no flag, environment variable or `pub` item to the binary. What decides which layer a test belongs to is in [`test-architecture.md`](.agents/docs/test-architecture.md).
 - **Python tests live in `test_bridge.py`** and run with `python3 -m unittest discover -s . -p test_bridge.py`.
 - **Each test covers one specific piece of that unit's logic**; do not combine several. Three unrelated assertions in one test function is three cases, not one, and the first failure hides the other two. A table of inputs that all exercise one behaviour — every malformed request is refused — is one case.
 - **A test name says what should hold**: it starts with — or at least contains — the word `should`. In Python that is `test_should_…`.
 
 ```rust
+// protocol.rs
 #[cfg(test)]
-mod tests {
-    use super::*;
+mod tests;
 
-    #[test]
-    fn should_list_only_supported_image_types() {
-        /* one behaviour */
-    }
+// protocol/tests.rs
+use super::*;
 
-    #[test]
-    fn should_reject_payload_with_wrong_magic() {
-        /* one behaviour */
-    }
+#[test]
+fn should_list_only_supported_image_types() {
+    /* one behaviour */
+}
+
+#[test]
+fn should_reject_payload_with_wrong_magic() {
+    /* one behaviour */
 }
 ```
 
@@ -367,3 +369,11 @@ What this document used to say, and what changed it.
 Changed by `D-2`, when the layer under `crates/host/tests/` was added. The first rule of §Tests read:
 
 > **A Rust test module is `#[cfg(test)] mod tests` beside the code it tests.** The host is one binary crate with no public surface, so there is no `tests/` layer; what decides how a test reaches its subject is in [`test-architecture.md`](.agents/docs/test-architecture.md).
+
+### 2026-10-06 — §Tests moves unit tests into sibling files
+
+Changed by `D-2`, when `crates/host/src/main.rs` was split into modules. The first rule of §Tests read:
+
+> **A Rust test module is `#[cfg(test)] mod tests` beside the code it tests.** It keeps crate-private access, so the host publishes nothing for its tests.
+
+and its example showed the tests inline, as `#[cfg(test)] mod tests { use super::*; … }` in the production file.

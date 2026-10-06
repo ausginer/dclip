@@ -18,13 +18,13 @@ Wayland clipboard and Claude Code are components the project does not own.
 No single layer proves the bridge correct. A change is well tested when the
 layers it touches agree.
 
-1. **Rust unit tests** — `#[cfg(test)] mod tests` beside the code in
-   `crates/host/src/main.rs`, over logic with no I/O: request parsing and
-   response selection through `respond_with` with an injected clipboard
-   function, MIME magic checks, response framing into a `Vec`, the text-sync
-   filter. They are the whole of the proof for anything that is a pure
-   transformation.
-2. **Rust OS-boundary tests** — also beside the code, over mechanisms the
+1. **Rust unit tests** — in each module's sibling `tests.rs`, such as
+   `crates/host/src/protocol/tests.rs`, over logic with no I/O: request parsing
+   and response selection through `respond_with` with the clipboard passed in
+   as a function of a query, MIME magic checks, response framing into a `Vec`,
+   and the text-sync sequence with its tools passed in. They are the whole of
+   the proof for anything that is a pure transformation.
+2. **Rust OS-boundary tests** — also in the module's `tests.rs`, over mechanisms the
    operating system decides: peer credentials on a `UnixStream` pair, framing
    across a real socket, child-process capture, timeout and reaping with `sh`
    and `cat`. They need nothing provisioned, so they run in the default
@@ -59,7 +59,9 @@ tools.
 
 **Most of the host is reachable by the first layer, and that is a design
 property rather than an accident.** `respond_with` takes the clipboard as a
-function, so the whole request-to-response policy is provable without Wayland.
+function of a query, and text sync takes its tools the same way, so the whole
+request-to-response policy and the sync sequence are provable without Wayland
+or X11.
 Keep it that way: a change that reads the clipboard directly inside the policy
 has made the policy expensive to prove for nothing.
 
@@ -196,3 +198,16 @@ Changed by `D-2`, when `crates/host/tests/` was added. §The layers listed three
 > one test a permanent seam — `CONTRIBUTING.md` §4's test, failed.
 
 §Failure interpretation had no row for the binary layer.
+
+### 2026-10-06 — Unit tests in sibling files
+
+Changed by `D-2` and `D-3`, when the host was split into modules. The first layer read:
+
+> 1. **Rust unit tests** — `#[cfg(test)] mod tests` beside the code in
+>    `crates/host/src/main.rs`, over logic with no I/O: request parsing and
+>    response selection through `respond_with` with an injected clipboard
+>    function, MIME magic checks, response framing into a `Vec`, the text-sync
+>    filter. They are the whole of the proof for anything that is a pure
+>    transformation.
+
+The second began "also beside the code", and the design-property paragraph read "`respond_with` takes the clipboard as a function, so the whole request-to-response policy is provable without Wayland."

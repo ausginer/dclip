@@ -1,6 +1,9 @@
 //! Drives the built binary through its real surface: arguments, exit status,
 //! stderr, the socket and signals. Stand-in `wl-paste` and `xsel` scripts sit
 //! first on the child's `PATH`, in place of a Wayland session.
+// Test support: `allow-unwrap-in-tests` covers `#[test]` functions only, and a
+// panic here is a failed test like any other.
+#![allow(clippy::unwrap_used)]
 
 use serde_json::Value;
 use std::{
@@ -182,10 +185,10 @@ impl Server {
     /// Whatever the process has written to stderr. Only after it has exited.
     pub fn stderr(&mut self) -> String {
         let mut text = String::new();
-        if let Some(mut stderr) = self.child.stderr.take() {
-            if self.child.try_wait().ok().flatten().is_some() {
-                stderr.read_to_string(&mut text).unwrap();
-            }
+        if let Ok(Some(_)) = self.child.try_wait()
+            && let Some(mut stderr) = self.child.stderr.take()
+        {
+            stderr.read_to_string(&mut text).unwrap();
         }
         text
     }
