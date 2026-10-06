@@ -3,57 +3,57 @@
 #![allow(unsafe_code)]
 
 use std::{
-    io,
+    io::{self, PipeReader},
     marker::PhantomData,
     os::{
-        fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd},
+        fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd},
         unix::net::UnixStream,
     },
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicI32, Ordering},
     time::Duration,
 };
 
-static RUNNING: AtomicBool = AtomicBool::new(true);
+/// The write end of the wake pipe, or -1 before [`wake_on_termination`].
+static WAKE: AtomicI32 = AtomicI32::new(-1);
 
-extern "C" fn stop(_: libc::c_int) {
-    RUNNING.store(false, Ordering::Relaxed);
+extern "C" fn wake(_: libc::c_int) {
+    let fd = WAKE.load(Ordering::Relaxed);
+    // SAFETY: `write` and the errno accessor are async-signal-safe, and the
+    // byte outlives the call. errno is restored so that the interrupted thread
+    // sees its own.
+    unsafe {
+        let errno = libc::__errno_location();
+        let saved = *errno;
+        libc::write(fd, [1_u8].as_ptr().cast(), 1);
+        *errno = saved;
+    }
 }
 
-/// Makes SIGTERM and SIGINT clear the flag [`running`] reads.
-pub(crate) fn stop_on_termination() -> io::Result<()> {
+/// Makes SIGTERM, SIGINT and SIGHUP write a byte to a pipe and returns its
+/// read end, which is readable from then on, whichever thread the signal
+/// reached. The handlers set `SA_RESTART`, so the only call they interrupt is
+/// a wait that is meant to notice them.
+pub(crate) fn wake_on_termination() -> io::Result<PipeReader> {
+    let (reader, writer) = io::pipe()?;
+    // A full pipe already holds a wake-up, so the handler never blocks.
+    set_nonblocking(writer.as_fd())?;
+    // Never closed: a handler may run at any point until the process exits,
+    // and must not write to a descriptor that has been reused.
+    WAKE.store(writer.into_raw_fd(), Ordering::Relaxed);
     // SAFETY: `action` is a valid, zero-initialised `sigaction` whose handler
-    // only stores to an atomic, which is async-signal-safe.
+    // does only async-signal-safe work, and the old-action pointers are null.
     unsafe {
         let mut action: libc::sigaction = std::mem::zeroed();
-        action.sa_sigaction = stop as *const () as usize;
+        action.sa_sigaction = wake as *const () as usize;
+        action.sa_flags = libc::SA_RESTART;
         libc::sigemptyset(&mut action.sa_mask);
-        if libc::sigaction(libc::SIGTERM, &action, std::ptr::null_mut()) < 0
-            || libc::sigaction(libc::SIGINT, &action, std::ptr::null_mut()) < 0
-        {
-            return Err(io::Error::last_os_error());
+        for signal in [libc::SIGTERM, libc::SIGINT, libc::SIGHUP] {
+            if libc::sigaction(signal, &action, std::ptr::null_mut()) < 0 {
+                return Err(io::Error::last_os_error());
+            }
         }
     }
-    Ok(())
-}
-
-pub(crate) fn running() -> bool {
-    RUNNING.load(Ordering::Relaxed)
-}
-
-/// Waits until `fd` is readable or `timeout` passes; `Ok(false)` on timeout.
-pub(crate) fn poll_readable(fd: BorrowedFd<'_>, timeout: Duration) -> io::Result<bool> {
-    let mut poll = libc::pollfd {
-        fd: fd.as_raw_fd(),
-        events: libc::POLLIN,
-        revents: 0,
-    };
-    let millis = timeout.as_millis().min(libc::c_int::MAX as u128) as libc::c_int;
-    // SAFETY: `poll` points at one initialised `pollfd`, and the count is 1.
-    let ready = unsafe { libc::poll(&mut poll, 1, millis) };
-    if ready < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(ready > 0)
+    Ok(reader)
 }
 
 /// One descriptor, borrowed for as long as this value lives, and the readiness
@@ -84,6 +84,11 @@ impl<'fd> Poll<'fd> {
             },
             PhantomData,
         )
+    }
+
+    /// Whether the last [`poll`] found this descriptor ready.
+    pub(crate) fn ready(&self) -> bool {
+        self.0.revents != 0
     }
 }
 

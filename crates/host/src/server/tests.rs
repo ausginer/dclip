@@ -42,3 +42,40 @@ fn should_fail_a_slowly_read_response_within_its_deadline() {
     assert!(write_response(Deadline::new(&stream, BUDGET), Ok(vec![0; 8 << 20])).is_err());
     assert!(started.elapsed() < BOUND, "{:?}", started.elapsed());
 }
+
+#[test]
+fn should_refuse_a_peer_whose_uid_is_not_allowed() {
+    let (stream, _peer) = UnixStream::pair().unwrap();
+    let uid = sys::uid();
+    let refusal = admit(&stream, &HashSet::new(), &AtomicUsize::new(0))
+        .err()
+        .unwrap();
+    assert_eq!(
+        refusal.to_string(),
+        format!("host UID {uid} is not allowed; add --allow-uid {uid} on Fedora")
+    );
+}
+
+#[test]
+fn should_refuse_a_connection_while_every_place_is_taken() {
+    let (stream, _peer) = UnixStream::pair().unwrap();
+    let active = AtomicUsize::new(WORKERS);
+    let refusal = admit(&stream, &HashSet::from([sys::uid()]), &active)
+        .err()
+        .unwrap();
+    assert_eq!(
+        refusal.to_string(),
+        "too many concurrent clipboard requests"
+    );
+    assert_eq!(active.load(Ordering::Relaxed), WORKERS);
+}
+
+#[test]
+fn should_release_a_place_when_its_connection_is_done() {
+    let (stream, _peer) = UnixStream::pair().unwrap();
+    let active = AtomicUsize::new(WORKERS - 1);
+    let slot = admit(&stream, &HashSet::from([sys::uid()]), &active).unwrap();
+    assert_eq!(active.load(Ordering::Relaxed), WORKERS);
+    drop(slot);
+    assert_eq!(active.load(Ordering::Relaxed), WORKERS - 1);
+}

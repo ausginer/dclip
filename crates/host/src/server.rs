@@ -5,12 +5,14 @@ use crate::{
     Result,
     cli::ServeOptions,
     clipboard,
+    process::Tool,
     protocol::{read_request, respond_with, write_response},
-    sys,
+    sys::{self, Interest, Poll},
 };
 use std::{
     collections::HashSet,
-    env, fs,
+    env,
+    fs::{self, File},
     io::{self, IoSlice, Read, Write},
     os::{
         fd::AsFd,
@@ -52,11 +54,7 @@ impl<'a> Deadline<'a> {
     }
 
     /// Retries `call` until it does not block, waiting for `interest` in between.
-    fn run<T>(
-        &self,
-        interest: sys::Interest,
-        mut call: impl FnMut() -> io::Result<T>,
-    ) -> io::Result<T> {
+    fn run<T>(&self, interest: Interest, mut call: impl FnMut() -> io::Result<T>) -> io::Result<T> {
         loop {
             match call() {
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
@@ -67,7 +65,7 @@ impl<'a> Deadline<'a> {
                 return Err(io::ErrorKind::TimedOut.into());
             }
             match sys::poll(
-                &mut [sys::Poll::new(self.stream.as_fd(), interest)],
+                &mut [Poll::new(self.stream.as_fd(), interest)],
                 Some(remaining),
             ) {
                 Err(error) if error.kind() != io::ErrorKind::Interrupted => return Err(error),
@@ -79,19 +77,17 @@ impl<'a> Deadline<'a> {
 
 impl Read for Deadline<'_> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.run(sys::Interest::Read, || (&*self.stream).read(buf))
+        self.run(Interest::Read, || (&*self.stream).read(buf))
     }
 }
 
 impl Write for Deadline<'_> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.run(sys::Interest::Write, || (&*self.stream).write(buf))
+        self.run(Interest::Write, || (&*self.stream).write(buf))
     }
 
     fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> io::Result<usize> {
-        self.run(sys::Interest::Write, || {
-            (&*self.stream).write_vectored(bufs)
-        })
+        self.run(Interest::Write, || (&*self.stream).write_vectored(bufs))
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -99,19 +95,69 @@ impl Write for Deadline<'_> {
     }
 }
 
-/// Removes the socket path when dropped.
-struct SocketGuard(PathBuf);
-impl Drop for SocketGuard {
+/// The most connections served at once.
+const WORKERS: usize = 16;
+
+/// The bound socket. Dropping it removes the path, and only then closes the
+/// listener.
+struct Socket {
+    path: PathBuf,
+    listener: UnixListener,
+}
+
+impl Drop for Socket {
     fn drop(&mut self) {
-        let _ = fs::remove_file(&self.0);
+        let _ = fs::remove_file(&self.path);
     }
 }
 
-struct ActiveGuard(Arc<AtomicUsize>);
-impl Drop for ActiveGuard {
+/// What `serve` holds for as long as it runs. Fields drop in declaration
+/// order, and that order is the cleanup order: the watcher stops first, then
+/// the socket path is removed and the listener closes, and the lock is
+/// released last. An instance that unlocked before removing its path could
+/// delete the socket a successor had just bound there.
+struct Bridge {
+    _watcher: Option<Tool>,
+    socket: Socket,
+    _lock: File,
+}
+
+/// One of the [`WORKERS`] places, released when the connection holding it is
+/// done.
+struct Slot<'a>(&'a AtomicUsize);
+
+impl Drop for Slot<'_> {
     fn drop(&mut self) {
         self.0.fetch_sub(1, Ordering::Relaxed);
     }
+}
+
+/// Admits a connection whose peer is allowed, while a place is free. A refusal
+/// is the message the peer gets.
+fn admit<'a>(
+    stream: &UnixStream,
+    allowed: &HashSet<u32>,
+    active: &'a AtomicUsize,
+) -> Result<Slot<'a>> {
+    let uid = sys::peer_uid(stream)?;
+    if !allowed.contains(&uid) {
+        return Err(
+            format!("host UID {uid} is not allowed; add --allow-uid {uid} on Fedora").into(),
+        );
+    }
+    let slot = Slot(active);
+    if active.fetch_add(1, Ordering::Relaxed) >= WORKERS {
+        return Err("too many concurrent clipboard requests".into());
+    }
+    Ok(slot)
+}
+
+/// Serves one admitted connection: its request, then its response, each within
+/// its own [`PHASE`].
+fn work(stream: &UnixStream) {
+    let result = read_request(Deadline::new(stream, PHASE))
+        .and_then(|request| respond_with(&request, clipboard::wayland));
+    let _ = write_response(Deadline::new(stream, PHASE), result);
 }
 
 pub(crate) fn serve(options: &ServeOptions) -> Result<()> {
@@ -148,78 +194,86 @@ pub(crate) fn serve(options: &ServeOptions) -> Result<()> {
         Err(error) => return Err(error.into()),
     }
     let listener = UnixListener::bind(&path)?;
-    let _socket_guard = SocketGuard(path.clone());
+    let socket = Socket { path, listener };
     // Peer UID is checked on every connection; no arbitrary clipboard writes.
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o666))?;
-    listener.set_nonblocking(true)?;
-    sys::stop_on_termination()?;
-    let _watcher = if options.sync_text {
+    fs::set_permissions(&socket.path, fs::Permissions::from_mode(0o666))?;
+    socket.listener.set_nonblocking(true)?;
+    let wake = sys::wake_on_termination()?;
+    let watcher = if options.sync_text {
         Some(clipboard::watch(&executable)?)
     } else {
         None
     };
+    let bridge = Bridge {
+        _watcher: watcher,
+        socket,
+        _lock: lock,
+    };
     println!(
         "Clipboard bridge: {}; allowed host UIDs: {:?}",
-        path.display(),
+        bridge.socket.path.display(),
         allowed
     );
-    let allowed = Arc::new(allowed);
-    let active = Arc::new(AtomicUsize::new(0));
-    while sys::running() {
-        // A signal can reach a worker thread instead of the listener thread.
-        match sys::poll_readable(listener.as_fd(), Duration::from_millis(1000)) {
-            Ok(true) => {}
-            Ok(false) => continue,
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-            Err(error) => return Err(error.into()),
-        }
-        if !sys::running() {
-            break;
-        }
-        let (stream, _) = match listener.accept() {
-            Ok(client) => client,
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock => continue,
-            Err(error) => return Err(error.into()),
-        };
-        if let Err(error) = stream.set_nonblocking(true) {
-            let _ = write_response(&stream, Err(error.into()));
-            continue;
-        }
-        let uid = match sys::peer_uid(&stream) {
-            Ok(uid) => uid,
-            Err(error) => {
-                let _ = write_response(Deadline::new(&stream, PHASE), Err(error.into()));
-                continue;
+    let listener = &bridge.socket.listener;
+    let active = AtomicUsize::new(0);
+    // The scope joins every worker before it returns, so no tool started for a
+    // connection outlives `serve`. Each worker is bounded by its deadlines, so
+    // the join is too.
+    thread::scope(|scope| {
+        loop {
+            let mut ready = [
+                Poll::new(listener.as_fd(), Interest::Read),
+                Poll::new(wake.as_fd(), Interest::Read),
+            ];
+            match sys::poll(&mut ready, None) {
+                Err(error) if error.kind() != io::ErrorKind::Interrupted => {
+                    return Err(error.into());
+                }
+                _ => {}
             }
-        };
-        if !allowed.contains(&uid) {
-            let _ = write_response(
-                Deadline::new(&stream, PHASE),
-                Err(
-                    format!("host UID {uid} is not allowed; add --allow-uid {uid} on Fedora")
-                        .into(),
-                ),
-            );
-            continue;
+            if ready[1].ready() {
+                return Ok(());
+            }
+            // Nothing that concerns one connection ends the loop: only an
+            // `accept` failure that is not about the connection does.
+            let stream = match listener.accept() {
+                Ok((stream, _)) => stream,
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::WouldBlock
+                            | io::ErrorKind::Interrupted
+                            | io::ErrorKind::ConnectionAborted
+                    ) =>
+                {
+                    continue;
+                }
+                Err(error) => return Err(error.into()),
+            };
+            let admitted = stream
+                .set_nonblocking(true)
+                .map_err(Into::into)
+                .and_then(|()| admit(&stream, &allowed, &active));
+            let slot = match admitted {
+                Ok(slot) => slot,
+                Err(error) => {
+                    let _ = write_response(Deadline::new(&stream, PHASE), Err(error));
+                    continue;
+                }
+            };
+            // Shared so that a worker that cannot start leaves the stream here
+            // to carry its refusal.
+            let stream = Arc::new(stream);
+            let worker = Arc::clone(&stream);
+            let started = thread::Builder::new().spawn_scoped(scope, move || {
+                let _slot = slot;
+                work(&worker);
+            });
+            if let Err(error) = started {
+                let _ = write_response(Deadline::new(&stream, PHASE), Err(error.into()));
+            }
         }
-        if active.fetch_add(1, Ordering::Relaxed) >= 16 {
-            active.fetch_sub(1, Ordering::Relaxed);
-            let _ = write_response(
-                Deadline::new(&stream, PHASE),
-                Err("too many concurrent clipboard requests".into()),
-            );
-            continue;
-        }
-        let active = active.clone();
-        thread::spawn(move || {
-            let _guard = ActiveGuard(active);
-            let result = read_request(Deadline::new(&stream, PHASE))
-                .and_then(|request| respond_with(&request, clipboard::wayland));
-            let _ = write_response(Deadline::new(&stream, PHASE), result);
-        });
-    }
-    // lock, socket path and watcher are cleaned up by their guards.
-    Ok(())
+    })
 }
 
 #[cfg(test)]

@@ -10,7 +10,7 @@ use std::{
     fs,
     io::{BufRead, BufReader, Read, Write},
     os::unix::{fs::PermissionsExt, net::UnixStream},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Child, Command, ExitStatus, Output, Stdio},
     sync::atomic::{AtomicUsize, Ordering},
     thread,
@@ -220,4 +220,39 @@ pub fn signal_pid(pid: u32, signal: &str) {
         .status()
         .unwrap();
     assert!(status.success(), "kill -{signal} {pid}");
+}
+
+/// Whether process `pid` is running: it exists and is not a zombie. A process
+/// that has died but whose new parent has not reaped it counts as gone.
+pub fn running(pid: u32) -> bool {
+    fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| {
+        stat.rsplit_once(") ")
+            .is_some_and(|(_, rest)| !rest.starts_with('Z'))
+    })
+}
+
+/// Waits for `path` to exist, for a file a stand-in writes asynchronously.
+pub fn await_path(path: &Path) {
+    let deadline = Instant::now() + PATIENCE;
+    while !path.exists() {
+        assert!(
+            Instant::now() < deadline,
+            "{} never appeared",
+            path.display()
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// The PID a stand-in wrote to `path`, once it has.
+pub fn await_pid(path: &Path) -> u32 {
+    await_path(path);
+    let deadline = Instant::now() + PATIENCE;
+    loop {
+        if let Ok(pid) = fs::read_to_string(path).unwrap().trim().parse() {
+            return pid;
+        }
+        assert!(Instant::now() < deadline, "{} holds no PID", path.display());
+        thread::sleep(Duration::from_millis(10));
+    }
 }
