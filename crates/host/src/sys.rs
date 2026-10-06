@@ -7,8 +7,9 @@ use std::{
     marker::PhantomData,
     os::{
         fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd},
-        unix::net::UnixStream,
+        unix::{net::UnixStream, process::CommandExt},
     },
+    process::Command,
     sync::atomic::{AtomicI32, Ordering},
     time::Duration,
 };
@@ -142,6 +143,30 @@ pub(crate) fn pidfd_open(pid: u32) -> io::Result<OwnedFd> {
     // SAFETY: the kernel has just returned this descriptor, open and
     // close-on-exec, and nothing else owns it.
     Ok(unsafe { OwnedFd::from_raw_fd(fd as RawFd) })
+}
+
+/// Makes the child `command` starts receive SIGKILL when this process ends,
+/// however it ends. The kernel sends the signal when the spawning *thread*
+/// exits, so `command` must be spawned from a thread that lives as long as the
+/// child is wanted. A parent that dies between `fork` and the `prctl` would be
+/// missed, so the child checks afterwards and fails its spawn if it has
+/// already been orphaned.
+pub(crate) fn kill_with_parent(command: &mut Command) -> &mut Command {
+    let parent = std::process::id();
+    // SAFETY: the closure runs in the child between `fork` and `exec`, and
+    // calls only `prctl` and `getppid`, which are async-signal-safe, and
+    // builds `io::Error`s that do not allocate.
+    unsafe {
+        command.pre_exec(move || {
+            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            if libc::getppid() as u32 != parent {
+                return Err(io::ErrorKind::NotFound.into());
+            }
+            Ok(())
+        })
+    }
 }
 
 /// Sends SIGKILL to the process group `group`. The caller guarantees the group

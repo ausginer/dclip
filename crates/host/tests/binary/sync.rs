@@ -1,5 +1,8 @@
-use crate::support::Scratch;
-use std::fs;
+use crate::support::{PATIENCE, Scratch, await_pid, running, signal_pid};
+use std::{
+    fs, thread,
+    time::{Duration, Instant},
+};
 
 /// A stand-in `xsel` whose selection is the file `x11`: `-ob` prints it,
 /// failing when it is absent, and `-ib` replaces it with stdin.
@@ -32,4 +35,27 @@ fn should_not_sync_text_when_an_image_is_offered() {
     let output = scratch.run(&["sync-text"]);
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     assert!(!scratch.path("x11").exists());
+}
+
+#[test]
+fn should_end_the_watcher_when_serve_is_killed() {
+    let scratch = Scratch::new();
+    scratch.tool(
+        "wl-paste",
+        r#"[ "$1" = --watch ] || exit 2
+echo $$ > "$DIR/watcher.tmp" && mv "$DIR/watcher.tmp" "$DIR/watcher"
+exec sleep 300"#,
+    );
+    let mut server = scratch.serve(&["--sync-text"]);
+    let watcher = await_pid(&scratch.path("watcher"));
+    server.signal("KILL");
+    server.wait();
+    let deadline = Instant::now() + PATIENCE;
+    while running(watcher) {
+        if Instant::now() >= deadline {
+            signal_pid(watcher, "KILL");
+            panic!("the watcher outlived serve");
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
 }

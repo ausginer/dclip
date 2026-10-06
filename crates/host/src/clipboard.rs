@@ -4,6 +4,7 @@ use crate::{
     Result,
     image::Format,
     process::{Tool, capture, spawn},
+    sys,
 };
 use std::{
     io,
@@ -57,10 +58,12 @@ pub(crate) fn set_x11_text(text: Vec<u8>) -> Result<()> {
 }
 
 /// Starts `wl-paste --watch`, which runs `executable sync-text` on every
-/// clipboard change.
+/// clipboard change. The watcher is killed when this process ends, so call it
+/// from the thread that lives for the whole of `serve`. A sync already running
+/// when the watcher dies finishes within its own tool deadlines.
 pub(crate) fn watch(executable: &Path) -> io::Result<Tool> {
     spawn(
-        Command::new("wl-paste")
+        sys::kill_with_parent(&mut Command::new("wl-paste"))
             .arg("--watch")
             .arg(executable)
             .arg("sync-text")
