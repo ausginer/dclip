@@ -5,17 +5,18 @@ use crate::{
     Result,
     cli::ServeOptions,
     clipboard,
-    protocol::{process_request, write_response},
+    protocol::{read_request, respond_with, write_response},
     sys,
 };
 use std::{
     collections::HashSet,
-    env, fs, io,
+    env, fs,
+    io::{self, IoSlice, Read, Write},
     os::{
         fd::AsFd,
         unix::{
             fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt},
-            net::UnixListener,
+            net::{UnixListener, UnixStream},
         },
     },
     path::{Path, PathBuf},
@@ -24,8 +25,79 @@ use std::{
         atomic::{AtomicUsize, Ordering},
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
+
+/// How long a connection may take to send its request, and separately to take
+/// its response.
+const PHASE: Duration = Duration::from_secs(12);
+
+/// A connection whose reads and writes share one deadline. A socket timeout
+/// bounds a single call, and the kernel re-arms it within one large write, so
+/// the stream is non-blocking and every wait is a `poll` for the time that
+/// remains: a peer that trickles cannot stretch a phase past its budget.
+pub(crate) struct Deadline<'a> {
+    stream: &'a UnixStream,
+    end: Instant,
+}
+
+impl<'a> Deadline<'a> {
+    /// Starts the clock: everything done through this value ends within
+    /// `budget` of now. `stream` must be non-blocking.
+    pub(crate) fn new(stream: &'a UnixStream, budget: Duration) -> Self {
+        Self {
+            stream,
+            end: Instant::now() + budget,
+        }
+    }
+
+    /// Retries `call` until it does not block, waiting for `interest` in between.
+    fn run<T>(
+        &self,
+        interest: sys::Interest,
+        mut call: impl FnMut() -> io::Result<T>,
+    ) -> io::Result<T> {
+        loop {
+            match call() {
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
+                outcome => return outcome,
+            }
+            let remaining = self.end.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(io::ErrorKind::TimedOut.into());
+            }
+            match sys::poll(
+                &mut [sys::Poll::new(self.stream.as_fd(), interest)],
+                Some(remaining),
+            ) {
+                Err(error) if error.kind() != io::ErrorKind::Interrupted => return Err(error),
+                _ => {}
+            }
+        }
+    }
+}
+
+impl Read for Deadline<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.run(sys::Interest::Read, || (&*self.stream).read(buf))
+    }
+}
+
+impl Write for Deadline<'_> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.run(sys::Interest::Write, || (&*self.stream).write(buf))
+    }
+
+    fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> io::Result<usize> {
+        self.run(sys::Interest::Write, || {
+            (&*self.stream).write_vectored(bufs)
+        })
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
 
 /// Removes the socket path when dropped.
 struct SocketGuard(PathBuf);
@@ -109,18 +181,20 @@ pub(crate) fn serve(options: &ServeOptions) -> Result<()> {
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => continue,
             Err(error) => return Err(error.into()),
         };
-        stream.set_read_timeout(Some(Duration::from_secs(12)))?;
-        stream.set_write_timeout(Some(Duration::from_secs(12)))?;
+        if let Err(error) = stream.set_nonblocking(true) {
+            let _ = write_response(&stream, Err(error.into()));
+            continue;
+        }
         let uid = match sys::peer_uid(&stream) {
             Ok(uid) => uid,
             Err(error) => {
-                let _ = write_response(&stream, Err(error.into()));
+                let _ = write_response(Deadline::new(&stream, PHASE), Err(error.into()));
                 continue;
             }
         };
         if !allowed.contains(&uid) {
             let _ = write_response(
-                &stream,
+                Deadline::new(&stream, PHASE),
                 Err(
                     format!("host UID {uid} is not allowed; add --allow-uid {uid} on Fedora")
                         .into(),
@@ -131,7 +205,7 @@ pub(crate) fn serve(options: &ServeOptions) -> Result<()> {
         if active.fetch_add(1, Ordering::Relaxed) >= 16 {
             active.fetch_sub(1, Ordering::Relaxed);
             let _ = write_response(
-                &stream,
+                Deadline::new(&stream, PHASE),
                 Err("too many concurrent clipboard requests".into()),
             );
             continue;
@@ -139,10 +213,14 @@ pub(crate) fn serve(options: &ServeOptions) -> Result<()> {
         let active = active.clone();
         thread::spawn(move || {
             let _guard = ActiveGuard(active);
-            let result = process_request(&stream);
-            let _ = write_response(&stream, result);
+            let result = read_request(Deadline::new(&stream, PHASE))
+                .and_then(|request| respond_with(&request, clipboard::wayland));
+            let _ = write_response(Deadline::new(&stream, PHASE), result);
         });
     }
     // lock, socket path and watcher are cleaned up by their guards.
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

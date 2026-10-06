@@ -87,7 +87,8 @@ pub(crate) fn respond_with(
     Ok(data)
 }
 
-pub(crate) fn process_request(reader: impl Read) -> Result<Vec<u8>> {
+/// Reads one request line of at most [`REQUEST_LIMIT`] bytes, newline included.
+pub(crate) fn read_request(reader: impl Read) -> Result<Vec<u8>> {
     let mut request = Vec::new();
     BufReader::new(reader)
         .take(REQUEST_LIMIT as u64 + 1)
@@ -95,7 +96,7 @@ pub(crate) fn process_request(reader: impl Read) -> Result<Vec<u8>> {
     if request.len() > REQUEST_LIMIT || !request.ends_with(b"\n") {
         return Err("invalid or oversized request".into());
     }
-    respond_with(&request, clipboard::wayland)
+    Ok(request)
 }
 
 /// Writes the header line and the payload. The header is serialised into its

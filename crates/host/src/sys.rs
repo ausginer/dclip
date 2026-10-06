@@ -4,6 +4,7 @@
 
 use std::{
     io,
+    marker::PhantomData,
     os::{
         fd::{AsRawFd, BorrowedFd},
         unix::net::UnixStream,
@@ -53,6 +54,64 @@ pub(crate) fn poll_readable(fd: BorrowedFd<'_>, timeout: Duration) -> io::Result
         return Err(io::Error::last_os_error());
     }
     Ok(ready > 0)
+}
+
+/// One descriptor, borrowed for as long as this value lives, and the readiness
+/// [`poll`] waits for on it.
+#[repr(transparent)]
+pub(crate) struct Poll<'fd>(libc::pollfd, PhantomData<BorrowedFd<'fd>>);
+
+/// What [`Poll`] waits for.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Interest {
+    /// Readable without blocking, or hung up.
+    Read,
+    /// Writable without blocking, or failed.
+    Write,
+}
+
+impl<'fd> Poll<'fd> {
+    pub(crate) fn new(fd: BorrowedFd<'fd>, interest: Interest) -> Self {
+        let events = match interest {
+            Interest::Read => libc::POLLIN,
+            Interest::Write => libc::POLLOUT,
+        };
+        Self(
+            libc::pollfd {
+                fd: fd.as_raw_fd(),
+                events,
+                revents: 0,
+            },
+            PhantomData,
+        )
+    }
+}
+
+/// Waits until one of `fds` is ready or `timeout` passes, rounding the timeout
+/// up to a whole millisecond so that a short remainder never spins. `None`
+/// waits without limit. Returns early with `Interrupted` when a signal lands.
+pub(crate) fn poll(fds: &mut [Poll<'_>], timeout: Option<Duration>) -> io::Result<()> {
+    let millis = match timeout {
+        None => -1,
+        Some(timeout) => timeout
+            .as_nanos()
+            .div_ceil(1_000_000)
+            .min(libc::c_int::MAX as u128) as libc::c_int,
+    };
+    // SAFETY: `Poll` is `repr(transparent)` over `pollfd`, so the slice is
+    // `fds.len()` contiguous, initialised `pollfd` values, and each descriptor
+    // stays open because `Poll` borrows it.
+    let ready = unsafe {
+        libc::poll(
+            fds.as_mut_ptr().cast::<libc::pollfd>(),
+            fds.len() as libc::nfds_t,
+            millis,
+        )
+    };
+    if ready < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
 }
 
 pub(crate) fn set_nonblocking(fd: BorrowedFd<'_>) -> io::Result<()> {
