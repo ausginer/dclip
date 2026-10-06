@@ -29,7 +29,16 @@ layers it touches agree.
    across a real socket, child-process capture, timeout and reaping with `sh`
    and `cat`. They need nothing provisioned, so they run in the default
    `cargo test`.
-3. **Python unit tests** — `test_bridge.py`, over the shim's argument
+3. **Rust binary tests** — `crates/host/tests/`, over the built
+   `claude-clipboard-host` driven through what a user reaches: its arguments,
+   exit status, stderr, the socket and signals. Stand-in `wl-paste` and `xsel`
+   scripts sit first on the child's `PATH`. They replace the Wayland session,
+   not the bridge, so what these tests prove is the bridge's own lifecycle —
+   binding, the lock, replacement of a stale socket, cleanup on a signal,
+   deadlines, the text-sync watcher — and the protocol as the socket carries
+   it. They need only `/bin/sh` and coreutils, so they run in the default
+   `cargo test`.
+4. **Python unit tests** — `test_bridge.py`, over the shim's argument
    translation and output, with `request_host` mocked. They prove that each
    supported `wl-paste`/`xclip` invocation becomes the right request and that
    everything else is refused.
@@ -38,9 +47,15 @@ Each catches a different fault, and the value is diagnostic: the failing layer
 says where the problem is.
 
 **The criterion is what a test must reach.** A crate-private mechanism is tested
-beside the code, because the binary publishes no surface a separate test target
-could reach. Making something public so that a test elsewhere can observe it buys
-one test a permanent seam — `CONTRIBUTING.md` §4's test, failed.
+beside the code, because the binary publishes no Rust surface a separate test
+target could reach. What the binary does publish — its command line, its exit
+status, its socket and its response to signals — is reached from
+`crates/host/tests/`, and anything only the running process can show belongs
+there. Making something public so that a test elsewhere can observe it buys one
+test a permanent seam — `CONTRIBUTING.md` §4's test, failed. That covers a
+hidden flag or environment variable as much as a `pub` item: the binary tests
+find their stand-ins through `PATH`, which is how the binary finds the real
+tools.
 
 **Most of the host is reachable by the first layer, and that is a design
 property rather than an accident.** `respond_with` takes the clipboard as a
@@ -149,6 +164,7 @@ Expected values come from different authorities depending on the contract.
 | ----------------------- | ----------------------------------------------------------------------------------- |
 | Rust unit only          | Request policy, MIME selection, framing or validation                               |
 | Rust OS-boundary only   | Socket, credential or child-process handling                                        |
+| Rust binary only        | Argument handling, the server's lifecycle — lock, socket path, signals, deadlines, workers — or the watcher |
 | Python only             | The shim's argument translation, or the shim's reading of the protocol             |
 | Unit tests pass, end-to-end fails | An assumption about `wl-paste`, `xsel` or Claude Code that does not hold  |
 
@@ -168,4 +184,15 @@ unrelated to the change is a gate people learn to re-run rather than read.
 
 ## Change record
 
-What this document used to say, and what changed it. No entries yet.
+What this document used to say, and what changed it.
+
+### 2026-10-06 — The binary-level layer
+
+Changed by `D-2`, when `crates/host/tests/` was added. §The layers listed three layers, ending with the Python unit tests as the third, and its criterion paragraph read:
+
+> **The criterion is what a test must reach.** A crate-private mechanism is tested
+> beside the code, because the binary publishes no surface a separate test target
+> could reach. Making something public so that a test elsewhere can observe it buys
+> one test a permanent seam — `CONTRIBUTING.md` §4's test, failed.
+
+§Failure interpretation had no row for the binary layer.

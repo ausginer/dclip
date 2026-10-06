@@ -46,3 +46,18 @@ All probes ran in scratchpad copies. Nothing was added to the tree to take them.
 
 - `Q-1`, for the owner.
 - Phase 1 of [`plan.md`](plan.md), for an implementer.
+
+## 2026-10-06 — Phase 1: the binary layer pins current behaviour (implementer)
+
+**Session.** Implementer role on branch `host/initial-refactoring`; `Effort guard active` was present at start.
+
+**Done.**
+
+- `crates/host/tests/binary/` is one test target (`main.rs` plus modules), so the layer links once. `support.rs` holds the scratch directory under the system temporary directory, stand-in tools, `serve` started and waited for through its banner line, and a client that splits header and payload at the first newline without the host's framing code.
+- Thirteen characterisation tests, one per item of the plan's phase-1 list, all passing against the unmodified source. Two items are tables of inputs exercising one behaviour: malformed `serve` arguments, and SIGTERM and SIGINT.
+- `Dockerfile` and `.dockerignore` admit `crates/host/tests`.
+- `D-2`'s amendment for the binary layer: `CONTRIBUTING.md` §Tests and `test-architecture.md` §The layers and §Failure interpretation, each with a change-record entry carrying the replaced wording. The sibling-file half of the amendment lands in phase 2 with the files it describes, so that neither document describes tests that do not exist yet.
+
+**Not done.** The Docker CLI is not installed in this devcontainer, so the image build was not run and whether it runs the new layer is unconfirmed. `cargo test --locked --target x86_64-unknown-linux-musl`, the command the image runs, passes here.
+
+**Measured.** Release musl binary 619,264 bytes, unchanged from `I-1`, as expected with no source change.

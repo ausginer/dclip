@@ -6,6 +6,7 @@ WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY crates/host/Cargo.toml crates/host/
 COPY crates/host/src crates/host/src
+COPY crates/host/tests crates/host/tests
 RUN cargo test --locked --target x86_64-unknown-linux-musl \
     && cargo build --locked --release --target x86_64-unknown-linux-musl
 

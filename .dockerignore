@@ -4,3 +4,4 @@
 !Cargo.lock
 !crates/host/Cargo.toml
 !crates/host/src
+!crates/host/tests
