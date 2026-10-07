@@ -40,6 +40,8 @@ Required properties:
 
 Modules `cli`, `clipboard`, `image`, `process`, `protocol`, `server`, `sync` and `sys` under `crates/host/src/`. `sys.rs` alone carries `#![allow(unsafe_code)]`; the workspace `[lints]` table denies `unsafe_code`, `clippy::undocumented_unsafe_blocks` and `clippy::unwrap_used`, and `clippy.toml` allows `unwrap` in tests. `rust-version` is 1.89. The lock is `File::try_lock` in `server::serve`; `sys::peer_uid` stays on `libc`.
 
+2026-10-07 · The restructuring commit carried one behaviour change, the order of `D-3`'s request refusal against the listing. It is accepted in `D-3` §Adjudicated.
+
 #### D-2 — Unit tests live in sibling files, and the binary gains a black-box test layer
 
 2026-10-06 · Accepted · Implemented 2026-10-06 · Addresses `F-7`, `F-9` · Amends `CONTRIBUTING.md` §Tests and `.agents/docs/test-architecture.md` §The layers
@@ -93,6 +95,25 @@ Required properties:
 2026-10-06 · Branch `host/initial-refactoring`.
 
 `image::Format` (with `ALL` in declaration order, pinned by `should_list_formats_in_declaration_order`), `protocol::Request::parse`, `clipboard::Query` as the seam of `protocol::respond_with` and `sync::sync_text`, `cli::Command` and `cli::ServeOptions`. A `read` naming an unsupported `type` is now refused before the clipboard is listed; the message is unchanged.
+
+##### D-3 §Adjudicated
+
+2026-10-07 · Architect · The error-precedence change conforms. No superseding decision, no remediation.
+
+**What changed.** In the initial implementation, `respond_with` listed the clipboard before it looked at `type`. `protocol::Request::parse` now refuses a `read` whose `type` is an unsupported string or not a string, and it does so before any listing. Two observable outcomes differ, both for that request alone:
+
+- When the listing would also have failed, the peer now gets `requested image type is not in host clipboard`. It used to get the listing's failure: `wl-paste timed out`, `wl-paste failed; check it on Fedora`, or a spawn error.
+- `wl-paste` is no longer run.
+
+Every other request, under every clipboard state, gets the outcome it got before.
+
+**Why it conforms.**
+
+- **The statement above entails it.** Each value is "parsed once at the boundary where the string arrives", and the read variant carries a `Format`. There are two ways to keep the old precedence. A request could hold an unsupported type, which is the unrepresentable state this decision exists to remove. Or the parser could be split around the listing. Either way, a `wl-paste` spawn is spent on a request that cannot succeed (`CONTRIBUTING.md` §0).
+- **No required property is broken.** The accepted language is unchanged, every refused request is still refused, and no message string changed. "User-facing error text is unchanged" governs the wording of each message. It does not govern which of two independent failures is reported. Nothing fixed that precedence: not these properties, not [`analysis.md`](host/initial-refactoring/analysis.md) §Properties worth keeping, and not a test. By `CONTRIBUTING.md` §13 it lies outside the contract. Reading the property this way changes nothing the decision requires of the code, so it is not an amendment (`documentation.md` §6).
+- **The shim cannot reach the changed case.** `bridge.py` refuses locally any type outside `IMAGE_TYPES`, which is the set `Format` accepts. Only a peer other than the shim can send such a request, and it gets `ok:false` either way.
+
+**The one tension is with `D-1`.** `D-1`'s last required property is that the restructuring commit changes no behaviour, and this ordering change landed in that commit. The property's witness held: every test passed unchanged apart from its mock. The journal also recorded the difference when it was made. The deviation is accepted as recorded. No test is owed, because pinning the precedence would turn it into contract.
 
 #### D-4 — A tool is read event-driven, under one total deadline, by a guard that always reaps
 
@@ -159,6 +180,21 @@ Required properties:
 2026-10-06 · Branch `host/initial-refactoring`.
 
 `server::Deadline` makes the stream non-blocking and waits in `sys::poll` for the time remaining; per-call socket timeouts were not enough, because the kernel re-arms `SO_SNDTIMEO` within one large write. `protocol::write_response` serialises the header into its own buffer and sends it with the payload by `write_vectored`. Tests: `should_frame_any_response_in_one_write_to_a_writer_that_takes_it_all`, `should_fail_a_trickled_request_within_its_deadline`, `should_fail_a_slowly_read_response_within_its_deadline`.
+
+##### D-6 §Adjudicated
+
+2026-10-07 · Architect · The mechanism change conforms. No superseding decision, no remediation.
+
+**What changed.** The argument above implies a mechanism: set each socket call's timeout to the time that remains. The implementation uses a different one. `server::Deadline` makes the accepted stream non-blocking, and every wait is a `sys::poll` given the time that remains. That still satisfies the argument's own sentence, because the one call that blocks is now `poll`, and it is the call given the remaining time. Every required property holds, and the tests named in §Implemented pass on the branch as of this date. The required properties are the whole of what this decision requires of the code (`documentation.md` §6). A change of mechanism alters none of them, so it is not a substantive amendment.
+
+**The argument's premise was wrong, and this note corrects it.** A socket timeout does not bound even one call. Measured 2026-10-07 on the repository's devcontainer, kernel 7.2.7, with a scratch Python probe that was not retained:
+
+- Setup: an `AF_UNIX` stream with `SO_SNDTIMEO` at 200 ms, and a peer draining 64 KiB every 50 ms.
+- One blocking `send` of 8 MiB returned after 6.30 s, having sent every byte.
+
+The kernel takes the timeout afresh for each buffer it allocates within the call. Resetting the timeout before each call would therefore have failed the first required property against a slow reader. That is the failure the implementer's first attempt showed. The argument's text above is left as written, and this note carries the correction.
+
+**Not the rejected event loop.** The rejected alternative in [`decisions.md`](host/initial-refactoring/decisions.md) §Connection deadlines and framing is one `poll` loop serving every connection. Here each worker still owns its connection on its own thread and polls only its own stream, so `CONTRIBUTING.md` §Language and platform's thread per connection stands.
 
 #### D-7 — The server wakes on events, joins its workers, and survives a failed connection
 

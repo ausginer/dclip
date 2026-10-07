@@ -129,3 +129,23 @@ The Python suite passes and is untouched.
 - **Owner:** the review round, for a fresh `consolidator`.
 - **Owner:** the Docker image build. It has not been run, because this devcontainer has no Docker CLI.
 - `Q-1`, out of scope as asked.
+
+## 2026-10-07 — Adjudication of the `D-6` mechanism and the `D-3` error order (architect)
+
+**Session.** Architect role on branch `host/initial-refactoring`; `Effort guard active` was present at start. `Q-1` stayed out of scope, as asked.
+
+**Asked.** Do the two departures the implementer recorded conform to their decisions, or do they need superseding decisions or remediation?
+
+**Ruled.** Both conform. Neither needs a new decision or any remediation. Each ruling is a dated `§Adjudicated` sub-clause of its entry in [`00-index.md`](../../00-index.md).
+
+- **`D-6`.** The required properties hold, and a change of mechanism changes none of them, so it is not a substantive amendment (`documentation.md` §6). The decision's argument assumed that per-call socket timeouts could bound a phase. A probe falsified that: one blocking 8 MiB `send` with `SO_SNDTIMEO` at 200 ms ran 6.30 s against a slow reader. The correction is in the entry. The watchdog rationale in [`decisions.md`](decisions.md) rested on the same premise; it is rewritten there, with a dated note carrying the old wording.
+- **`D-3`.** Refusing an unsupported `type` before the listing follows from parsing once at the boundary. No property is broken: the accepted language, the refused set and every message string are unchanged. Error precedence between independent failures was never part of the contract. The shim cannot send such a request. The change does breach the letter of `D-1`'s "the restructuring commit changes no behaviour". It is accepted as recorded, with a pointer under `D-1` §Implemented.
+
+**Checked.** `cargo test --workspace`: 33 and 17 passed, including both `D-6` deadline tests. Old and new request paths compared by reading `respond_with` in the initial implementation against `protocol::Request::parse` and `protocol::respond_with`.
+
+**Noticed, not acted on.** Neither is part of the question, so both are left for the review round.
+
+- **A commit identifier in this journal.** The phase-3 entry names a commit range, which `documentation.md` §10 forbids in a tracked file. That entry is append-only and is not this session's to rewrite.
+- **`Deadline` on a blocking stream.** `server::Deadline` documents that its stream must be non-blocking. In `server::serve`, if `set_nonblocking` fails, the refusal is written through a `Deadline` over a blocking stream. A header of under 100 bytes, written to a freshly accepted stream, cannot block in practice.
+
+**Waiting.** Unchanged from the phase-4 entry: the owner's Fedora check, the Docker build, the review round, and `Q-1`.

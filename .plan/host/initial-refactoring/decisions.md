@@ -60,8 +60,11 @@ Canonical entry: `D-5`.
 
 Canonical entry: `D-6`.
 
-- **A watchdog thread per connection that shuts the socket down at the deadline.** Rejected. It doubles the thread count to enforce what resetting the socket timeout to the remaining time before each call enforces in the same thread.
-- **Non-blocking sockets with one `poll` loop for all connections.** Rejected. It is an event loop, and `CONTRIBUTING.md` §Language and platform keeps a thread per connection.
+- **A watchdog thread per connection that shuts the socket down at the deadline.** Rejected. It doubles the thread count to enforce what a deadline enforces in the worker's own thread.
+- **Non-blocking sockets with one `poll` loop for all connections.** Rejected. It is an event loop, and `CONTRIBUTING.md` §Language and platform keeps a thread per connection. A non-blocking stream per worker, where each worker polls only its own stream, is a different thing. That is what was built (`D-6` §Adjudicated).
+- **Reset the socket timeout to the remaining time before each call.** This was the mechanism the decision first assumed. It fails, because the kernel takes `SO_SNDTIMEO` afresh for each buffer it allocates within one call. A single large write to a slow reader therefore runs past any per-call timeout: 6.3 s against 200 ms in the measurement `D-6` §Adjudicated records.
+
+> 2026-10-07 — The watchdog bullet used to end: _"It doubles the thread count to enforce what resetting the socket timeout to the remaining time before each call enforces in the same thread."_ Its premise was falsified while `D-6` was being implemented. The rejection stands, because the deadline still runs in the worker's own thread.
 - **`BufWriter` around the stream.** Rejected for the payload. `BufWriter` passes large writes through unbuffered, so it would work, but it only hides the header's 14 small writes in its buffer, where a deliberately framed header states the intent. Either form satisfies the required property. The decision is the property, not the spelling.
 - **A single `Vec` holding header and payload.** Rejected outright. It copies up to 64 MiB to save one syscall, which `CONTRIBUTING.md` §0 and §9 forbid.
 
