@@ -90,7 +90,9 @@ Each step began with a test that failed for the reason its finding predicts, the
 | 3.5 `D-7` | SIGHUP: the process died with no exit code and left the socket; in-flight test: `serve` exited with its tool still running | Wake pipe, `thread::scope`, `admit`, `Bridge` |
 | 3.6 `D-8` | The stand-in watcher was still running 10 s after SIGKILL to `serve` | `PR_SET_PDEATHSIG` in `pre_exec` |
 
-**A phase-2 defect, found and fixed in 3.4.** In phase 2, `capture` marked success by assigning `tool = Tool::Reaped`. Assigning to a value with a `Drop` drops the old value, so the success path killed the tool's process group: the `xsel -i` selection daemon would have been killed after every sync. No test saw it, because no stand-in forked a survivor. The first version of the 3.4 fix repeated the mistake inside `try_reap`, and `should_not_signal_the_group_of_a_reaped_child` caught it. `Drop` now lives on `Tool`, a wrapper around `State`, so a state change drops only the `Child` handle. `should_leave_the_group_of_a_successful_tool_alone` pins the success path. The defect existed only in commits `b117205`–`b9b6686` on this branch.
+**A phase-2 defect, found and fixed in 3.4.** In phase 2, `capture` marked success by assigning `tool = Tool::Reaped`. Assigning to a value with a `Drop` drops the old value, so the success path killed the tool's process group: the `xsel -i` selection daemon would have been killed after every sync. No test saw it, because no stand-in forked a survivor. The first version of the 3.4 fix repeated the mistake inside `try_reap`, and `should_not_signal_the_group_of_a_reaped_child` caught it. `Drop` now lives on `Tool`, a wrapper around `State`, so a state change drops only the `Child` handle. `should_leave_the_group_of_a_successful_tool_alone` pins the success path. The defect existed only on this branch, from the phase-2 restructuring up to the fix of step 3.4, and never reached `main`.
+
+> 2026-10-08 — The sentence above named its span by commit identifiers. It was replaced in place under `D-13`, and the identifiers are not carried.
 
 **`D-6`: socket timeouts were not enough.** The first deadline set `SO_RCVTIMEO` or `SO_SNDTIMEO` to the remaining time before each call. The slow-reader test still ran for 3 s: inside one large `writev` on a Unix stream socket, the kernel takes the timeout afresh for each buffer it allocates, so a reader that keeps draining slowly never lets a single call time out. Accepted streams are now non-blocking, and `Deadline` waits in `poll` for the remaining time. The required properties are met as stated. The mechanism is a different spelling from the decision's "every blocking call is given the time that remains", and is recorded here rather than as a new decision.
 
@@ -149,3 +151,35 @@ The Python suite passes and is untouched.
 - **`Deadline` on a blocking stream.** `server::Deadline` documents that its stream must be non-blocking. In `server::serve`, if `set_nonblocking` fails, the refusal is written through a `Deadline` over a blocking stream. A header of under 100 bytes, written to a freshly accepted stream, cannot block in practice.
 
 **Waiting.** Unchanged from the phase-4 entry: the owner's Fedora check, the Docker build, the review round, and `Q-1`.
+
+## 2026-10-08 — Rulings on round `host-initial-refactoring-r1` (architect)
+
+**Session.** Architect role on branch `host/initial-refactoring`, with `Effort guard active` present at start. The scope was every finding the round routed to the architect, the owner or the record owner, with `F-10` and `F-11` first. `Q-1` stayed out of scope. The round summary and all four pass reports were read in full. The code behind each routed finding was read at the round's state, which confirms the mechanism each finding describes. The pass probes were not re-run.
+
+**Ruled:**
+
+| Finding        | Ruling                                                                                                                                                       | Recorded in                         |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------- |
+| `F-10`         | A signal inherited as ignored stays ignored. This holds for all three signals, not only SIGHUP.                                                              | `D-11`, superseding `D-7`           |
+| `F-11`         | When shutdown is requested, the watcher stops, the path is removed and the listener closes, all before any join. A peer still sending its request is told `bridge is shutting down`. Received requests are drained. | `D-11`                              |
+| `F-21`         | `SA_RESTART` and the `Interrupted` arm on `accept` go. `F-6`'s `EINTR` sentence is withdrawn with a note, and so is its counterpart in `analysis.md`.        | `D-11`, `F-6`                       |
+| `F-13`         | A defect against `D-4`, not a conflict inside it. Stdin is written in the capture's `poll` loop, so the writer thread goes.                                  | `D-4` §Adjudicated                  |
+| `F-17`         | `D-8`'s last property covers death of the serving process only. A graceful shutdown kills in-flight syncs with the watcher's group, as `D-4` intends. Only the comment is owed. | `D-8` §Adjudicated                  |
+| `F-18`, `F-24` | A malformed `serve` names the argument at fault, and the UID message becomes one that does. `handle-stdio` becomes a row of the usage table.                 | `D-12`, superseding `D-9`           |
+| `F-14`         | A concurrency test through the binary is owed. The arms that cannot be provoked are waived by the architect.                                                 | `F-14` §Ruling                      |
+| `F-16`         | `D-6`'s error header was spelled in an order the host never sent. Corrected in place, as a non-substantive edit, and likewise in `analysis.md`.              | `D-6`                               |
+| `F-19`         | §10 governs. An identifier already in a file is replaced where it stands, and the note does not repeat it. Applied here, and to the quotes in two pass reports. | `D-13`, `documentation.md` §6, §9 and §10 |
+
+`F-12`, `F-15`, `F-20`, `F-22` and `F-23` stay with the implementer, as routed. [`plan.md`](plan.md) §Phase 5 orders them together with the rulings above.
+
+**Judgement calls an owner may want to revisit:**
+
+- **Honouring SIG_IGN for SIGINT and SIGTERM as well as SIGHUP.** For SIGINT and SIGTERM this departs from the initial implementation.
+- **Ending the request phase at shutdown, but not the response phase.** The worst case with a slow reader is still the tools' deadlines plus 12 s.
+- **Accepting a possible truncated X11 selection** when a graceful shutdown lands on a sync that is writing more than a pipe buffer of text. This was reasoned and not reproduced.
+- **Superseding `D-9` rather than reading it narrowly.** Its "any other invocation" could not be read to agree with `D-3`.
+
+**Waiting:**
+
+- [`plan.md`](plan.md) §Phase 5, for an implementer.
+- Then a second review round, the owner's Fedora check, the Docker build, and `Q-1`.

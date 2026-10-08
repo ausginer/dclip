@@ -29,7 +29,9 @@ The refactoring changes how these hold, never whether they hold. Each one is eit
 - One listing and one read per request.
 - After the read, the bytes must start with the format's magic. This is the guard against the clipboard changing between listing and reading.
 - No payload over 64 MiB.
-- Response framing: a JSON header line `{"ok":true,"size":N}` or `{"ok":false,"size":0,"error":"…"}`, then exactly `N` payload bytes.
+- Response framing: a JSON header line `{"ok":true,"size":N}` or `{"error":"…","ok":false,"size":0}`, then exactly `N` payload bytes.
+
+  > 2026-10-08 — The error header used to be spelled `{"ok":false,"size":0,"error":"…"}` here, in an order the host never sent (`F-16`).
 
 **Access**
 
@@ -101,6 +103,8 @@ Canonical entry: `F-6` — shutdown on a timer, abandoned workers, fatal per-con
 - **The 1 s tick.** `poll(listener, 1000 ms)` exists because the comment's premise is true: a process-directed signal may be delivered to any thread that does not block it, so the main thread's `poll` is not guaranteed to see `EINTR`. The tick is the workaround. A wake pipe written by the handler removes the need for it, because the pipe is readable whichever thread ran the handler.
 - **Abandoned workers.** `serve` returns from its loop and `main` exits the process while worker threads may be inside `capture`. Their `ChildGuard`s never drop. In practice `wl-paste` usually gets `EPIPE` when the process holding the read end disappears and exits on its own, but nothing guarantees it, and `CONTRIBUTING.md` §Priorities lists _no unreaped child_ among the properties nothing trades against.
 - **Fatal per-connection errors.** In the accept loop, `stream.set_read_timeout(…)?`, `stream.set_write_timeout(…)?` and `Err(error) => return Err(error.into())` on `accept` all end the server for a problem with one connection. Handlers are installed without `SA_RESTART`, so a signal that lands between a ready `poll` and `accept` makes `accept` fail with `EINTR`: `serve` returns `Err`, cleanup still runs, and the exit status is 1 instead of 0. `thread::spawn` panics if the thread cannot be created.
+
+  > 2026-10-08 — The `EINTR` sentence in this bullet is falsified (`F-21`). The listener is non-blocking, and a non-blocking `accept` never sleeps, so no signal can fail it with `EINTR`. A probe saw none in 200,000 calls. The rest of the bullet stands.
 
 ### Structure and types (F-7)
 

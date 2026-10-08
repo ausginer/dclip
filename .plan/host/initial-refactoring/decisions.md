@@ -99,3 +99,53 @@ Canonical entry: `D-9`.
 Canonical entry: `D-10`.
 
 - **Test only through the binary layer**, with stand-in `wl-paste` and `xsel`. Rejected as the only layer. Each case would cost several process spawns and file-based state in the stand-ins, where a unit test with closures pins the same sequence in microseconds. One binary-level test that `sync-text` runs end to end against stand-ins is still worthwhile, and the plan includes it.
+
+### Server lifecycle, corrected (D-11)
+
+Canonical entry: `D-11`, which supersedes `D-7`. `D-7`'s alternatives above still stand, apart from the deferral that the last bullet of this section reopens.
+
+**Inherited dispositions (`F-10`):**
+
+- **Honour an inherited `SIG_IGN` for SIGHUP only.** Rejected. The reason for honouring it applies to every signal: the launcher chose. `nohup` ignores SIGHUP, and a shell that starts a background job without job control ignores SIGINT. One rule for all three costs nothing extra.
+- **Keep overriding, and document that `nohup` no longer detaches the bridge.** Rejected. It turns a deliberate operator choice into a trap, and it buys nothing: a bridge that ignores SIGHUP never needs cleanup on SIGHUP.
+
+**Shutdown ordering (`F-11`):**
+
+- **Keep accepting during the drain, and refuse each new connection with `bridge is shutting down`.** Rejected. The message is friendlier than a reset or a missing path, but the loop would have to run alongside the join, watching both the listener and the workers finishing. Removing the path and closing the listener refuses new connections promptly and needs no machinery.
+- **Keep the socket until the drain ends, as `D-7` had it.** Rejected on `F-11`'s evidence. Connections queue that nothing accepts, and the socket stays advertised for the whole drain.
+- **Cut the response write at shutdown as well.** Rejected. A large response always waits for socket space, so even a reader at normal speed would lose an image already being delivered. The response phase keeps its own 12 s bound.
+- **Exit at once on a second signal.** Rejected. It is a second shutdown path, and it abandons the in-flight tools that `D-7` was written to reap. Once the drain covers only work in progress, it is normally milliseconds long.
+- **Interrupt workers with `shutdown(2)` on their sockets.** `D-7` deferred this because it needed a registry of live streams. That reason is gone for the request phase: `server::Deadline` already waits in `poll`, and the wake pipe stays readable after the first signal. Watching the pipe there ends the request phase with no registry. This is what `D-11` adopts, for the request phase only.
+
+**`EINTR` (`F-21`):**
+
+- **Keep `SA_RESTART` and the `Interrupted` arm on `accept` as defence in depth.** Rejected. Neither answers a failure the serving process can meet (`F-21`'s probe), and each comes with a reason that is false and would mislead the next reader. A blocking call added later that `std` does not retry would need its own handling in any case, because `SA_RESTART` does not restart every call.
+
+### Capture stdin (D-4, `F-13`)
+
+`D-4` stands. It is adjudicated in `D-4` §Adjudicated.
+
+- **Signal the group of a reaped tool on failure.** Rejected. Once the group's last member exits, its ID may name another group, and `D-4` forbids signalling it for exactly that reason.
+- **Detach the writer thread on failure.** Rejected. The thread would outlive the capture.
+- **Write stdin without blocking, in the capture's `poll` loop.** Taken. One loop and one deadline cover all three descriptors, and one thread per capture with input goes away.
+
+### In-flight sync on a graceful shutdown (D-8, `F-17`)
+
+`D-8` stands, and its last property is read as scoped to the death of the serving process, in `D-8` §Adjudicated.
+
+- **Stop only the watcher on a graceful shutdown, so that a running sync finishes.** Rejected. Its syncs would be left orphaned, writing to X11 for up to about 17 s after the bridge reported that it had stopped. It would also take a second kill rule for one `Tool`, against `D-4`'s by-group rule. What it prevents is a truncated X11 selection, which needs more than a pipe buffer of text in flight at the moment of shutdown. The next copy repairs it.
+
+### Invocations (D-12)
+
+Canonical entry: `D-12`, which supersedes `D-9`.
+
+- **Print the usage line for malformed `serve` options too**, as `D-9` was worded. Rejected. It discards the one line that says which argument was wrong. It would also have broken `D-3`'s unchanged-text property, which the implementation honoured.
+- **Delete the `handle-stdio` witness.** Rejected. It is the regression test for the deletion, and as a row in the usage table it costs one string.
+
+### Commit identifiers in the record (D-13)
+
+Canonical entry: `D-13`.
+
+- **Leave the identifier, because the record is append-only.** Rejected. The violation stays, and the token still resolves to nothing once the branch is squashed.
+- **Withdraw it under §6, carrying the old sentence in a note.** Rejected. The note would carry the identifier, so the violation moves rather than goes.
+- **Rewrite the sentence with no note.** Rejected. A record edited without a note cannot be told apart from one that was always so. The note records that an edit was made.

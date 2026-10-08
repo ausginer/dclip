@@ -141,6 +141,29 @@ Required properties:
 
 `process::capture` waits in `sys::poll` on the stdout pipe and a `sys::pidfd_open` descriptor under one deadline, reading with `read_to_end` through `take(LIMIT + 1 - len)` into the returned buffer. `process::Tool` wraps `State::{Unreaped, Reaped}`; `Drop` lives on the wrapper so that the transition to `Reaped` never signals. Tests: `should_not_signal_the_group_of_a_reaped_child`, `should_leave_the_group_of_a_successful_tool_alone`, `should_refuse_output_over_the_limit`, and the binary `should_deliver_an_image_at_the_64_mib_limit_byte_exact`. Re-measured: 63 MiB in about 38 ms (journal).
 
+##### D-4 §Adjudicated
+
+2026-10-08 · Architect · `F-13` is a defect against this decision, not a conflict within it. D-4 stands. No superseding decision is needed, but remediation is owed.
+
+**Ruling.** `F-13` sets two of the properties above against each other: one deadline bounds the whole capture, stdin included, and a reaped child is never signalled. They conflict only for an implementation that writes stdin from a thread the capture must join.
+
+- Once the tool is reaped, nothing may signal its group. Such a thread therefore waits for whoever still holds the pipe, past the deadline: 3.01 s against 200 ms in `F-13`'s probe.
+- A stdin write that waits under the capture's own deadline meets both properties. When the capture ends, on any path, the bridge closes its end of the pipe, and nothing is left to join.
+- In this design that write is non-blocking, inside the capture's `poll` loop, and the writer thread is removed. "The stdin writer cannot outlive the capture" is then true by construction.
+
+**Excluded:**
+
+- **Signalling the group after the leader has been reaped.** Once the group's last member exits, its ID may name another group.
+- **Detaching the writer thread.** It would outlive the capture.
+
+**A process the tool left in its group is left alone**, even if it holds the pipe after the tool failed. That matches the success path: the guarantee covers the tool the bridge spawned, not the tool's descendants once the tool has been reaped.
+
+**Owed:**
+
+- A unit test with `F-13`'s shape: the tool exits non-zero while a member of its group holds stdin open and does not read it. The capture returns its failure within a millisecond deadline.
+- The existing timeout, reaping and stdin tests still pass.
+
+
 #### D-5 — The clipboard's type listing is parsed as bytes
 
 2026-10-06 · Accepted · Implemented 2026-10-06 · Addresses `F-4`
@@ -174,7 +197,9 @@ Required properties:
 - A peer that misses a deadline is dropped, and its slot is released.
 - The bounds are parameters of the functions that enforce them, so a unit test proves each one with a millisecond bound, and the production values remain 12 s.
 - A response is the header, a newline and the payload, written in a number of syscalls that does not depend on the header's content. The payload is never copied to join it to the header.
-- The header's bytes are unchanged: `{"ok":true,"size":N}` or `{"ok":false,"size":0,"error":"…"}` followed by a newline.
+- The header's bytes are unchanged: `{"ok":true,"size":N}` or `{"error":"…","ok":false,"size":0}` followed by a newline.
+
+> 2026-10-08 — Corrected in place, as a non-substantive edit (`F-16`). The error header was spelled `{"ok":false,"size":0,"error":"…"}`. The host has always sent it with its keys sorted, because `serde_json` is built without `preserve_order`, and "unchanged" was always the requirement. What the code owes is the same as before.
 
 ##### D-6 §Implemented
 
@@ -199,7 +224,7 @@ The kernel takes the timeout afresh for each buffer it allocates within the call
 
 #### D-7 — The server wakes on events, joins its workers, and survives a failed connection
 
-2026-10-06 · Accepted · Implemented 2026-10-06 · Addresses `F-6` · Mechanism chosen by `I-2`
+2026-10-06 · Accepted · Implemented 2026-10-06 · **Superseded 2026-10-08 by `D-11`** · Addresses `F-6` · Mechanism chosen by `I-2`
 
 Shutdown currently relies on a flag checked after a 1 s `poll` timeout, because a signal may be delivered to a worker thread (`F-6`). The signal handler instead writes one byte to a non-blocking pipe, and the accept loop waits on the listener and the pipe with no timeout. `signalfd` was the alternative and is rejected: it needs SIGTERM and SIGINT blocked in every thread, and `std::process::Command` passes the blocked mask to every tool it spawns (`I-2`), so `wl-paste`, `xsel` and every sync process would then ignore SIGTERM.
 
@@ -239,9 +264,23 @@ Required properties:
 
 `sys::kill_with_parent` sets `PR_SET_PDEATHSIG` to SIGKILL in `pre_exec` and fails the spawn if the parent has already changed; `clipboard::watch` uses it, called from `server::serve` on the main thread. Test: binary `should_end_the_watcher_when_serve_is_killed`.
 
+##### D-8 §Adjudicated
+
+2026-10-08 · Architect · `F-17`: the last property above is scoped to the death of the serving process. No superseding decision is needed. The code is unchanged, and only its comment is owed.
+
+**Ruling.** The property says that a sync already running when the watcher dies runs to completion. It belongs to this decision's subject, the parent-death signal. It says what `PR_SET_PDEATHSIG` does not reach: the signal kills the watcher alone, so a running sync is not tracked further. It is not a guarantee about a graceful shutdown. That path is governed by `D-4`, which requires an unreaped child to be killed by process group. `D-4` also names "killing the watcher's group at shutdown" as intended. Read any wider, the property would contradict `D-4` and require nothing that `D-8` was argued for. This reading changes nothing the code was built to, so it is not an amendment (`documentation.md` §6).
+
+**What happens to an in-flight sync**, on each way the bridge ends:
+
+- **SIGTERM, SIGINT or SIGHUP.** The bridge kills the watcher's process group, and every `sync-text` the watcher started dies with it. A sync killed while it is still writing more than a pipe buffer of text to `xsel -ib` may leave X11 a truncated selection. That was reasoned from the code and not reproduced. The next copy replaces it. This is accepted: stopping the bridge stops text sync, which is what `README.md` says.
+- **SIGKILL, the OOM killer, or any other death of the serving process.** Only the watcher is signalled. A running sync finishes within its own tool deadlines.
+
+**Owed:** the doc comment on `clipboard::watch` states both cases. It currently states only the second, and states it without condition.
+
+
 #### D-9 — The `handle-stdio` subcommand is deleted
 
-2026-10-06 · Accepted · Implemented 2026-10-06 · Addresses `F-8`
+2026-10-06 · Accepted · Implemented 2026-10-06 · **Superseded 2026-10-08 by `D-12`** · Addresses `F-8`
 
 `handle-stdio` answers one request from stdin with no peer check. It is undocumented, absent from the usage line, and has no caller in the repository, `setup-host.sh` or the shim. Nothing is released (`CONTRIBUTING.md` §8), so it is deleted rather than documented. The binary-level tests of `D-2` reach the protocol through `serve`, which is the published surface.
 
@@ -283,6 +322,108 @@ Required properties:
 2026-10-06 · Branch `host/initial-refactoring`.
 
 `sync::sync_text(state, wayland, x11_text, set_x11_text)`, with `sync::run` draining stdin and reading `CLIPBOARD_STATE`. Tests in `sync/tests.rs`: `should_write_exactly_the_text_that_was_read`, `should_skip_the_write_when_x11_already_holds_the_text`, `should_treat_a_failed_x11_read_as_different_text`, `should_skip_the_write_when_an_image_appears_by_the_second_listing`, `should_sync_only_in_the_data_and_sensitive_states`; binary `should_write_offered_plain_text_to_x11`.
+
+#### D-11 — The server keeps inherited ignored signals, stops advertising its socket once shutdown is requested, and drains only work in progress
+
+2026-10-08 · Accepted · Supersedes `D-7` · Addresses `F-6`, `F-10`, `F-11`, `F-21` · Alternatives in [`decisions.md`](host/initial-refactoring/decisions.md)
+
+`D-7`'s mechanism stands:
+
+- a wake pipe written by the signal handlers;
+- an accept loop with no timeout;
+- workers inside `std::thread::scope`;
+- refusals per connection;
+- a cleanup order carried by types.
+
+Round `host-initial-refactoring-r1` found three places where `D-7` asked for the wrong thing. This decision restates `D-7` with them corrected, so that the lifecycle contract can be read from one entry.
+
+**Inherited dispositions (`F-10`).** `D-7` installed handlers for SIGTERM, SIGINT and SIGHUP whatever their disposition. Its reason for SIGHUP was a closing terminal, which would otherwise kill the bridge without cleanup. A disposition inherited as ignored means the launcher has already decided that the bridge survives that signal. `nohup` does this for SIGHUP, and a shell starting a background job without job control does it for SIGINT. Overriding that choice is nannying the operator (`CONTRIBUTING.md` §1.1), and the cost was measured: a bridge started under `nohup` now dies with its terminal. The rule is the same for all three signals, because the reasoning does not depend on which signal it is.
+
+**When shutdown takes effect (`F-11`).** `D-7` dropped the socket only after every worker had been joined. During the drain the path stayed bound, the kernel queued connections that nothing would accept, and a peer that had sent nothing held the drain for a whole request phase. Measured with one idle connection: 11.9 s from SIGTERM to exit, with a queued client left unanswered and then reset. "As soon as the signal is delivered" now means two things. The bridge stops advertising itself at once. The drain then waits only for requests that have already been received, because only they have work in progress. A peer still sending its request line has started nothing, so it is told the bridge is stopping.
+
+**`EINTR` (`F-21`).** The listener is non-blocking, and a non-blocking `accept` never sleeps, so a signal cannot fail it with `EINTR`. Probed: no `EINTR` in 200,000 non-blocking `accept` calls across 7.4 million handler runs, against `EINTR` on every one of 2,000 blocking calls. The premise behind `D-7`'s `EINTR` clause, and behind `SA_RESTART`, never held. Every blocking call left in the serving process goes through a `std` path that retries `EINTR` itself. `poll` is never restarted, whatever the flag says, so its callers retry it.
+
+Required properties:
+
+- **No timed wake-up in the accept loop.** Shutdown begins at the loop's next wake after a handled signal.
+- **Inherited ignored signals stay ignored.** The handled signals are SIGTERM, SIGINT and SIGHUP, each only if its disposition is not ignored when `serve` starts. A signal inherited as ignored stays ignored, and the bridge does not stop for it.
+- **The handler only writes to the wake pipe.** It does async-signal-safe work and nothing else.
+- **The bridge stops advertising before any worker is joined.** Once shutdown is requested, the watcher is stopped, then the socket path is removed, then the listener is closed. A connection that the kernel queued but `serve` never accepted is reset when the listener closes. A later connect fails at once.
+- **A peer still sending its request is turned away.** If a connection's request line has not fully arrived when shutdown is requested, it gets an error response, `bridge is shutting down`, and is closed without waiting further. A connection whose request has arrived is answered, with its tools and its response write each within their own bounds (`D-4`, `D-6`).
+- **`serve` returns only after every worker has finished.** No tool spawned for a connection outlives the process. The lock is released last, after every worker has finished. A successor started during the drain fails on the lock, exactly as it would against a running bridge.
+- **A failure that concerns one connection never ends the server.** That covers:
+  - reading its peer credentials;
+  - making its stream non-blocking;
+  - a refused UID;
+  - the concurrency limit;
+  - a failure to start its worker thread.
+
+  Each gets an error response where one can still be written.
+- **Which errors are retried:**
+  - `poll`: `Interrupted` is retried.
+  - `accept`: `WouldBlock` is retried (the readiness was taken by a connection that vanished), and so is `ConnectionAborted`. Any other `accept` error ends `serve` with that error.
+  - Nothing else in the signal or accept path answers `EINTR`. There is no `Interrupted` arm on `accept`, and the handlers are installed without `SA_RESTART`.
+- **The cleanup order is a property of the types**, and it is stated where it is enforced.
+- **The concurrency limit stays at 16**, and each existing refusal message is unchanged.
+- **Witnesses, at the binary level:**
+  - `serve`, started with SIGHUP ignored, survives SIGHUP and still answers a request, then stops on SIGTERM.
+  - With an idle connection open, after SIGTERM the socket path is gone. The idle peer receives `bridge is shutting down`, and `serve` exits 0 well inside one request phase.
+  - `should_reap_an_in_flight_requests_tool_before_exiting_on_a_signal` still passes.
+  - The concurrency test that `F-14` §Ruling requires.
+
+#### D-12 — Only the published invocations run, and a refused invocation is told what was wrong
+
+2026-10-08 · Accepted · Supersedes `D-9` · Addresses `F-8`, `F-18`, `F-24` · Alternatives in [`decisions.md`](host/initial-refactoring/decisions.md)
+
+`D-9` deleted `handle-stdio`, and that stands. Its second property, "any other invocation prints the usage line", contradicted `D-3`'s unchanged error text for a `serve` whose options are malformed. The implementation followed `D-3`, and `D-3` gives the better outcome (`CONTRIBUTING.md` §12). A user who chose the right subcommand and got one argument wrong is better served by a line naming that argument than by the usage line. One of those messages names nothing, though: `serve --allow-uid alice` prints `invalid digit found in string`, which is `std`'s parse error. The rule below makes it name the problem.
+
+`D-9`'s witness was a test of its own, and it repeats the usage-refusal test (`F-24`). The word `handle-stdio` is worth pinning, because it is the shape that was deleted. It needs a row in that table, not a second test.
+
+Required properties:
+
+- The binary accepts `serve [--sync-text] [--allow-uid UID]…` and `sync-text`, and nothing else. `handle-stdio` is not accepted.
+- An invocation that names no published subcommand, or that gives `sync-text` any argument, prints the usage line and exits 1.
+- A `serve` with an argument it does not accept exits 1 with one line naming the argument at fault:
+  - an unknown option is named: `unknown argument: --bogus`, unchanged;
+  - an `--allow-uid` with nothing after it says so: `missing UID`, unchanged;
+  - an `--allow-uid` value that is not a number names that value and says a UID was expected. This replaces `invalid digit found in string`, and the exact wording is the implementer's.
+- **Witnesses:**
+  - One binary table test of usage refusals, with `handle-stdio` among its rows and no setup that its assertion does not use.
+  - One binary table test of malformed `serve` arguments, asserting exit status 1 and each message.
+  - Both end on every outcome, including one where `serve` starts (`F-15`).
+
+#### D-13 — A commit identifier found in a tracked file is replaced where it stands, and the record does not carry it
+
+2026-10-08 · Accepted · Implemented 2026-10-08 · Addresses `F-19` · Amends `.agents/docs/documentation.md` §6 and §10
+
+Two rules of `documentation.md` collide when a commit identifier is already in the record:
+
+- §10 forbids a commit identifier in any tracked file.
+- §6 makes the record append-only, and carries a withdrawn text in a dated note.
+
+Leaving the identifier keeps the violation. Withdrawing it under §6 copies the identifier into the note, which keeps the violation too. §6 exists so that the record never destroys the only copy of something a reader needs. A commit identifier is not such a thing: §10's own reason is that it "carries nothing a reader can check", and on a squashed branch it resolves to nothing. So §10 governs. The identifier is replaced where it stands, and the note records that the replacement was made, not what it replaced. The same reasoning covers evidence: a report proving that a file holds an identifier describes the token, and does not reproduce it.
+
+Required properties:
+
+- `documentation.md` §10 states the rule:
+  - a commit identifier already in a tracked file, the record included, is replaced where it stands by a name from §10's table;
+  - a dated note beside it records that an identifier was replaced, without repeating it;
+  - evidence of such a violation describes the token rather than quoting it.
+- §6's withdrawal rule names this as its one exception.
+- §9 records the amendment.
+- In the same change, the rule is applied to every tracked file that carries a commit identifier.
+
+##### D-13 §Implemented
+
+2026-10-08 · Branch `host/initial-refactoring`.
+
+`documentation.md` §6, §9 and §10. Applied to:
+
+- the phase-3 entry of [`journal.md`](host/initial-refactoring/journal.md);
+- the quotes in `reviewer-7` of [`implementation-reviewer.md`](reviews/host-initial-refactoring-r1/implementation-reviewer.md);
+- the quotes in `integrity-5` of [`coherence-integrity.md`](reviews/host-initial-refactoring-r1/coherence-integrity.md).
+
+Each place carries a dated note. A search of `.plan/`, `.agents/`, `README.md` and `CONTRIBUTING.md` for hexadecimal runs of seven characters or more finds no commit identifier. What remains is the signal mask in `I-2` and a qualified `agent:` token.
 
 ---
 
@@ -342,6 +483,8 @@ The second and third were not reproduced, because their windows are narrow. The 
 
 Required property: shutdown is prompt and event-driven, `serve` returns only after every worker has finished, and a failure that concerns one connection never ends the server.
 
+> 2026-10-08 — The third bullet's `EINTR` clause is withdrawn (`F-21`). The listener was non-blocking in the initial implementation, and a non-blocking `accept` cannot fail with `EINTR`, so that path never existed. The withdrawn text read: _"That includes the `EINTR` a signal causes when it lands between `poll` and `accept`, because the handlers are installed without `SA_RESTART`."_ It is left standing above only because this entry is append-only. The rest of the bullet stands: `?` on the socket timeouts, a fatal non-`WouldBlock` `accept` error such as `ECONNABORTED`, and the `thread::spawn` panic. `D-11` supersedes `D-7`'s clause that rested on it.
+
 #### F-7 — The host is one file with stringly-typed values, scattered `unsafe` and inline tests
 
 2026-10-06 · Tier C · Settled 2026-10-06 by `D-1`, `D-2`, `D-3`
@@ -383,7 +526,7 @@ Required property: each of the above has a test in the layer that can reach it.
 
 #### F-10 — A bridge started with SIGHUP ignored now exits when its terminal closes
 
-2026-10-07 · Tier A · Open · Routed to the architect (`D-7`) · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`integrity-1`)
+2026-10-07 · Tier A · Open · Routed to the architect (`D-7`) · Ruled 2026-10-08 by `D-11`; open until implemented · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`integrity-1`)
 
 `sys::wake_on_termination` installs a SIGHUP handler unconditionally and never reads the old action. A disposition inherited as ignored, as under `nohup`, was kept by the initial implementation and is now replaced, so a bridge that used to outlive its terminal shuts down with it.
 
@@ -391,7 +534,7 @@ Required property: a signal the bridge inherited as ignored stays ignored, or th
 
 #### F-11 — After a termination signal the socket stays bound and new connections queue unserved
 
-2026-10-07 · Tier A · Open · Routed to the architect (`D-7`) · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`integrity-2`)
+2026-10-07 · Tier A · Open · Routed to the architect (`D-7`) · Ruled 2026-10-08 by `D-11`; open until implemented · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`integrity-2`)
 
 On the wake byte, `serve` joins every worker inside `thread::scope`, and only after that drops `Bridge`, which removes the path and closes the listener. While the workers are joined, the kernel queues new connections that nothing will accept. With one idle connection open, the process exited 11.9 s after SIGTERM, and a client that connected meanwhile got no reply and then a reset.
 
@@ -399,7 +542,7 @@ Required property: once shutdown is requested, a new connection is refused promp
 
 #### F-12 — Running-server coverage is claimed for wiring that no test pins
 
-2026-10-07 · Tier B · Open · Routed to the implementer · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`integrity-3`)
+2026-10-07 · Tier B · Open · Routed to the implementer · Scheduled in [`plan.md`](host/initial-refactoring/plan.md) §Phase 5 · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`integrity-3`)
 
 `README.md` §Tests and limitations and `test-architecture.md` §The layers claim that tests cover the running server's peer-UID check, its concurrency limit and its per-connection deadline. Two mutations survived the full suite: replacing the `admit` call in `serve` with an unconditional slot, and raising `PHASE` to 3600 s.
 
@@ -407,7 +550,7 @@ Required property: every coverage claim can be falsified by mutating the site it
 
 #### F-13 — A failed capture with input can outlive its deadline
 
-2026-10-07 · Tier C · Open · Routed to the architect (`D-4`) · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`reviewer-1`)
+2026-10-07 · Tier C · Open · Routed to the architect (`D-4`) · Ruled 2026-10-08 in `D-4` §Adjudicated, a defect against `D-4`; open until implemented · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`reviewer-1`)
 
 When a tool exits non-zero while another member of its group holds stdin open, `capture` joins the stdin writer after dropping a reaped `Tool`. That drop signals nothing, so the join waits for the group member to exit. A probe took 3.01 s against a 200 ms deadline; the initial implementation returned in 2.45 ms. `D-4`'s "one deadline bounds the whole capture" and "a reaped child is never signalled" conflict on this path. No production trigger is known, because `xsel -i` reads all of its input before it forks.
 
@@ -415,15 +558,36 @@ Required property: a capture's total duration, the stdin join included, is bound
 
 #### F-14 — `F-6`'s per-connection limb has no test that drives the accept loop
 
-2026-10-07 · Tier C · Open · Routed to the owner or the architect · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`reviewer-2`)
+2026-10-07 · Tier C · Open · Routed to the owner or the architect · Ruled 2026-10-08 (§Ruling below); open until implemented · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`reviewer-2`)
 
 Plan step 3.5 requires a test showing that a per-connection failure leaves the loop running, and none exists. `admit`'s tests pin refusal messages and slot counting, which were not the defect. The journal acknowledges the gap.
 
 Required property: either a test shows that a per-connection failure leaves `serve` accepting, or the waiver of that exit criterion is recorded with who granted it.
 
+##### F-14 §Ruling
+
+2026-10-08 · Architect · A test is owed. The limb is not waived as a whole.
+
+**The test.** The concurrency refusal can be reached through the running binary with nothing provisioned:
+
+1. Sixteen connections that send nothing hold every place.
+2. A seventeenth gets `too many concurrent clipboard requests`.
+3. Once the sixteen close, a request is served.
+
+This test also pins the refusal arm of the accept loop in `server::serve`. A refused UID and a failure to make the stream non-blocking go through that same arm, so a regression that turns the arm into a `return`, or puts a `?` in front of `admit`, fails it. The same test is `F-12`'s witness for the wiring of the concurrency limit.
+
+**Waived by the architect, on this date,** from plan step 3.5's criterion: the arms that no test can provoke without privilege or fault injection.
+
+- **A failure to read the peer's credentials.**
+- **A refused UID**, which needs a second account.
+- **A failure to make the stream non-blocking.**
+- **A failure to start a worker thread.**
+
+Their handling is structural, and every arm but the last shares the arm the test above pins. `EINTR` on `accept` drops out of the limb altogether (`D-11`, `F-21`).
+
 #### F-15 — Three binary tests start `serve` with no path that ends it
 
-2026-10-07 · Tier C · Open · Routed to the implementer · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`reviewer-3`)
+2026-10-07 · Tier C · Open · Routed to the implementer · Scheduled in [`plan.md`](host/initial-refactoring/plan.md) §Phase 5 · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`reviewer-3`)
 
 `Scratch::run` waits for the binary to exit, and three tests use it to start `serve`, expecting it to refuse. A regression that lets `serve` start makes `cargo test` and the image build hang rather than fail, which breaks `D-2`'s termination property.
 
@@ -431,7 +595,7 @@ Required property: every binary test that starts `serve` ends it and reports a f
 
 #### F-16 — `D-6` gives the error header's key order differently from the bytes the host sends
 
-2026-10-07 · Tier C · Open · Routed to the architect (`D-6`) · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`reviewer-4`, `integrity-4`)
+2026-10-07 · Tier C · Routed to the architect (`D-6`) · Settled 2026-10-08 by a non-substantive correction of `D-6` · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`reviewer-4`, `integrity-4`)
 
 `D-6` gives `{"ok":false,"size":0,"error":…}`. The host emits sorted keys, `{"error":…,"ok":false,"size":0}`, and always has.
 
@@ -439,7 +603,7 @@ Required property: the record describes the header's wire form as the host emits
 
 #### F-17 — A graceful shutdown kills an in-flight text sync
 
-2026-10-07 · Tier C · Open · Routed to the architect (`D-8`) · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`reviewer-5`)
+2026-10-07 · Tier C · Open · Routed to the architect (`D-8`) · Ruled 2026-10-08 in `D-8` §Adjudicated; open until the comment is corrected · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`reviewer-5`)
 
 On SIGTERM, SIGINT or SIGHUP, the `Bridge` drop kills the watcher's process group, and every running `sync-text` is in that group. A probe confirmed this. `D-8` and the `clipboard::watch` doc comment say a running sync runs to completion. That holds only on parent death. The behaviour is unchanged from the initial implementation.
 
@@ -447,7 +611,7 @@ Required property: the record and the comment state truthfully what happens to a
 
 #### F-18 — Malformed `serve` options do not print `D-9`'s usage line
 
-2026-10-07 · Tier C · Open · Routed to the architect (`D-9`, `D-3`) · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`reviewer-6`)
+2026-10-07 · Tier C · Open · Routed to the architect (`D-9`, `D-3`) · Ruled 2026-10-08 by `D-12`; open until implemented · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`reviewer-6`)
 
 `serve --bogus`, `serve --allow-uid alice` and `serve --allow-uid` exit 1 with a specific message, unchanged from the initial implementation as `D-3` requires. `D-9` says "any other invocation prints the usage line".
 
@@ -455,7 +619,7 @@ Required property: the record states one rule for what a malformed `serve` invoc
 
 #### F-19 — The journal cites a commit range as provenance
 
-2026-10-07 · Tier C · Open · Routed to the record owner · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`reviewer-7`, `integrity-5`)
+2026-10-07 · Tier C · Routed to the record owner · Settled 2026-10-08 by `D-13` · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`reviewer-7`, `integrity-5`)
 
 The phase-3 entry of [`journal.md`](host/initial-refactoring/journal.md) gives the span in which a defect existed as a range of commit identifiers. `documentation.md` §10 forbids that in a tracked file.
 
@@ -463,7 +627,7 @@ Required property: the record names the affected states in §10's vocabulary, no
 
 #### F-20 — `serve` can pass `Deadline` a blocking stream
 
-2026-10-07 · Tier C · Open · Routed to the implementer · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`integrity-6`)
+2026-10-07 · Tier C · Open · Routed to the implementer · Scheduled in [`plan.md`](host/initial-refactoring/plan.md) §Phase 5 · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`integrity-6`)
 
 If `set_nonblocking` fails on an accepted stream, `serve` still writes the refusal through `Deadline::new`, whose documented precondition is a non-blocking stream.
 
@@ -471,7 +635,7 @@ Required property: any path that hands `Deadline` a stream meets its preconditio
 
 #### F-21 — `SA_RESTART` and the `accept` loop's `Interrupted` retry guard against a failure that cannot occur
 
-2026-10-07 · Tier C · Open · Routed to the architect (`D-7`, `F-6`) · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`der-1`)
+2026-10-07 · Tier C · Open · Routed to the architect (`D-7`, `F-6`) · Ruled 2026-10-08 by `D-11`; open until implemented · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`der-1`)
 
 The listener has always been non-blocking, and a non-blocking `accept` never sleeps, so a signal cannot interrupt it with `EINTR`. A probe saw 0 `EINTR` in 200,000 non-blocking `accept` calls across 7.4 million handler runs; the blocking control returned `EINTR` on all 2,000 calls. `F-6`'s third bullet, `D-7`'s `EINTR` clause, `SA_RESTART` and its comment all rest on the opposite premise.
 
@@ -479,7 +643,7 @@ Required property: every mechanism in the signal and accept path, and the commen
 
 #### F-22 — `Deadline`'s doc comment restates a withdrawn premise
 
-2026-10-07 · Tier C · Open · Routed to the implementer · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`der-2`)
+2026-10-07 · Tier C · Open · Routed to the implementer · Scheduled in [`plan.md`](host/initial-refactoring/plan.md) §Phase 5 · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`der-2`)
 
 The comment begins "A socket timeout bounds a single call", the premise `D-6` §Adjudicated withdrew.
 
@@ -487,7 +651,7 @@ Required property: the stated reason for `Deadline` matches the adjudicated prem
 
 #### F-23 — The error alias carries `Send + Sync` that no caller needs
 
-2026-10-07 · Tier C · Open · Routed to the implementer · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`cleanup-1`)
+2026-10-07 · Tier C · Open · Routed to the implementer · Scheduled in [`plan.md`](host/initial-refactoring/plan.md) §Phase 5 · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`cleanup-1`)
 
 No error typed with `crate::Result` crosses a thread, and the crate builds with the bounds removed.
 
@@ -495,7 +659,7 @@ Required property: the error type's bounds are no wider than some caller needs.
 
 #### F-24 — The `handle-stdio` refusal test repeats the usage-refusal test
 
-2026-10-07 · Tier C · Open · Routed to the architect (`D-9`) · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`cleanup-2`)
+2026-10-07 · Tier C · Open · Routed to the architect (`D-9`) · Ruled 2026-10-08 by `D-12`; open until implemented · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`cleanup-2`)
 
 `should_refuse_handle_stdio_as_an_unpublished_invocation` asserts the same behaviour as `should_print_usage_and_exit_1_for_an_unpublished_invocation`, and its clipboard stand-in plays no part in its assertion. `D-9` §Implemented and plan step 7 name it as `D-9`'s witness, so whether it should stay is a question about `D-9`.
 

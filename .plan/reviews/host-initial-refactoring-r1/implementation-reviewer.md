@@ -130,7 +130,9 @@ Tier counts: A 0 · B 0 · C 7.
 
 ### Finding reviewer-7 — Tier C — The journal cites a commit range as provenance
 
-- **Finding.** The journal's phase-3 entry ends: "The defect existed only in commits `b117205`–`b9b6686` on this branch."
+- **Finding.** The journal's phase-3 entry ends by giving the span in which a defect existed as a range of two commit identifiers.
+
+  > 2026-10-08 — This quote reproduced the identifiers. It was replaced in place under `D-13`, and they are not carried.
 - **Current behaviour / contract.** `.agents/docs/documentation.md` §10: "no tracked file uses [a commit identifier] as a reference … not … as evidence, as a status or as provenance". The architect's 2026-10-07 journal entry noticed the same thing and left it for this round.
 - **Why it is a problem.** The branch can land squashed, and the identifiers would then resolve to nothing. The sentence carries nothing a reader can check.
 - **Evidence.** `.plan/host/initial-refactoring/journal.md`, the paragraph "A phase-2 defect, found and fixed in 3.4."

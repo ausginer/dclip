@@ -1,6 +1,6 @@
 # Refactoring plan
 
-The order in which `D-1`–`D-10` land, what each phase must leave true, and how it is checked. The decisions are canonical in [`00-index.md`](../../00-index.md), and their required properties are the whole of what an implementer owes. This plan only sequences them.
+The order in which `D-1`–`D-10`, and then `D-11` and `D-12`, land, what each phase must leave true, and how it is checked. The decisions are canonical in [`00-index.md`](../../00-index.md), and their required properties are the whole of what an implementer owes. This plan only sequences them.
 
 **Owner of each phase:** an `implementer` session. **After phase 4:** a review round, run by a fresh `consolidator`, and a manual end-to-end check on Fedora by the owner.
 
@@ -98,6 +98,41 @@ Exit: every finding `F-1`–`F-6` has a test that failed before its step and pas
   - one large screenshot, the case `F-1` made slow;
   - one `--sync-text` session: copy text, paste it into an X11 application, then copy an image and confirm it is not overwritten.
 - **Owner:** start the review round. Its scope is the landing of phases 1–4 against `D-1`–`D-10`.
+
+## Phase 5 — Remediate round `host-initial-refactoring-r1`
+
+Decisions: `D-11`, which supersedes `D-7`, and `D-12`, which supersedes `D-9`. Rulings: `D-4` §Adjudicated, `D-8` §Adjudicated and `F-14` §Ruling. Findings: `F-10`–`F-15`, `F-17`, `F-18` and `F-20`–`F-24`. `F-16` and `F-19` were settled in the record and owe nothing here. `Q-1` stays out of scope.
+
+**Owner:** an `implementer` session. **After it:** a fresh `consolidator` for a second round, scoped to this phase.
+
+The register entries are what is owed, and this section only orders them. The rhythm is phase 3's. Where a defect can be shown, write the test first, see it fail for the reason the finding gives, then fix it. Where it cannot, as with an absence or a comment, the step says so. Commit each step separately.
+
+| Step | Entry                      | Test first, and what it should show before the fix                                                                                                                                       | Change                                                                                                                                                                                                    |
+| ---- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 5.1  | `F-15`                     | In a scratch copy only: remove the `is_socket()` limb in `server::serve`, and `should_refuse_and_keep_a_regular_file_at_the_socket_path` hangs. Nothing is committed for this.           | Every binary test that starts `serve` ends it and fails on every outcome, the outcome where `serve` does not refuse included. Do this first, because 5.4 and 5.8 add tests of this kind.                  |
+| 5.2  | `D-11` (`F-21`)            | None possible. The change removes a guard against a failure that cannot occur, and `F-21`'s probe is the evidence.                                                                         | Drop `SA_RESTART`, and drop the `Interrupted` arm on `accept`. Make the doc comment on `sys::wake_on_termination` state only what is true.                                                                 |
+| 5.3  | `D-11` (`F-10`)            | Binary: `serve` started through `/bin/sh -c 'trap "" HUP; exec …'` dies on SIGHUP.                                                                                                        | Install a handler only for a signal whose disposition is not ignored when `serve` starts.                                                                                                                  |
+| 5.4  | `D-11` (`F-11`)            | Binary: with an idle connection open, after SIGTERM the socket path still exists, the idle peer gets nothing, and the exit takes about one request phase.                                  | On the wake byte, stop the watcher, remove the path and close the listener before joining. The request phase ends at shutdown with `bridge is shutting down`. The lock is released last.                  |
+| 5.5  | `F-14`, `F-12`             | Binary: 16 idle connections, then a 17th is refused, then a request is served after the 16 close. It passes against the current code. Show its strength instead: in a scratch copy it fails under `F-12`'s `admit` mutation. | No production change. Correct the coverage text that `F-12` names, where it remains unpinned: the UID check and the 12 s phase value are proved at the function level only.                              |
+| 5.6  | `D-4` (`F-13`)             | Unit: `F-13`'s probe shape, under a 200 ms deadline, takes about 3 s.                                                                                                                     | Write stdin without blocking, in the capture's `poll` loop, and remove the writer thread.                                                                                                                 |
+| 5.7  | `D-8` (`F-17`)             | None. This is a comment.                                                                                                                                                                 | The doc comment on `clipboard::watch` states what happens to a running sync on a graceful shutdown and on parent death.                                                                                    |
+| 5.8  | `D-12` (`F-18`, `F-24`)    | Binary: the malformed-`serve` table asserts each message, and `--allow-uid alice` fails on `invalid digit found in string`.                                                               | Name the rejected UID value. Fold `handle-stdio` into the usage-refusal table, and delete the separate test with its unused setup.                                                                          |
+| 5.9  | `F-20`, `F-22`, `F-23`     | None. Each is a precondition, a comment or a bound.                                                                                                                                      | Meet `Deadline`'s precondition on the refusal path, or state at the call the assumption the code relies on. Restate `Deadline`'s reason as the adjudicated premise. Remove `Send + Sync` if, after 5.6, no caller needs it. |
+
+Notes on the sequence:
+
+- **5.2–5.4 change the same function, `sys::wake_on_termination`, and the same loop.** Commit them separately all the same, so that each `D-11` limb can be read in its own diff.
+- **5.4: the wake pipe stays readable once written,** because nothing drains it. A request-phase wait can therefore include it, with no other state. The response phase must not include it (`D-11`). `F-22`'s comment is rewritten in this step, because `Deadline` changes here.
+- **5.4 changes user-facing behaviour.** `README.md` step 2 and §Tests and limitations say what shutdown now does: the socket goes at once, a request already received is answered, and a peer still sending is told the bridge is stopping. They also say that a SIGHUP inherited as ignored, as under `nohup`, keeps the bridge running when its terminal closes. No record identifiers appear in either (`documentation.md` §5.2).
+- **5.6 is the only step that touches `sync-text`'s write to X11.** Re-run `should_leave_the_group_of_a_successful_tool_alone` and the sync binary tests after it.
+
+Exit:
+
+- Every step's failing test failed for its stated reason before its fix, and passes after it. Each limb waived in `F-14` §Ruling is named in the journal as waived, not as tested.
+- The gates in [`handoff.md`](../../../.agents/docs/handoff.md) §Verify what you changed pass: `cargo fmt`, clippy with `-D warnings`, `cargo test --workspace` and the musl-target test command. The Python suite also runs, because a new error message reaches the shim.
+- The release musl binary is measured against 619,264 bytes (`CONTRIBUTING.md` §15). Any delta beyond ±2% is recorded with its cause.
+- The register gains `D-11` §Implemented and `D-12` §Implemented, each naming its sites and tests. Each finding this phase settles has its status line updated, and the journal records the phase.
+- The branch is pushed. A new round is the owner's to start.
 
 ## Out of scope
 

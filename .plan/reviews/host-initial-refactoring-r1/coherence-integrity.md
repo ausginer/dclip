@@ -88,7 +88,7 @@ Round `host-initial-refactoring-r1`: the change set of the branch `host/initial-
 **Tier C**
 
 - **Current behavior / contract.** `documentation.md` §10: no tracked file uses a commit identifier as a reference or provenance.
-- **Why it is a problem.** The Phase 3 entry of `.plan/host/initial-refactoring/journal.md` ends: "The defect existed only in commits `b117205`–`b9b6686` on this branch." The architect's 2026-10-07 entry noticed this and left it. If the branch is squashed, the range resolves to nothing.
+- **Why it is a problem.** The Phase 3 entry of `.plan/host/initial-refactoring/journal.md` ends by naming the defect's span as a range of two commit identifiers. (2026-10-08: this quote reproduced them. It was replaced in place under `D-13`, and they are not carried.) The architect's 2026-10-07 entry noticed this and left it. If the branch is squashed, the range resolves to nothing.
 - **Evidence.** The sentence above, found by searching the journal for hexadecimal tokens. It is the only one in the changed files.
 - **Required property.** The journal names the span by what it did (the landing of the restructuring, up to the fix of step 3.4), not by hashes. The entry is append-only, so how to correct it is the owner's call.
 

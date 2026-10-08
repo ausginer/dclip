@@ -150,7 +150,7 @@ awk -v re="^#### D-1( —|$)" '$0 ~ re {f=1;print;next} f && /^#{1,4} /{exit} f'
 
 **An entry's own disposition lives in the entry**, and the register publishes no second table of statuses beside it: a copy with nothing to refuse when the two disagree drifts.
 
-**A withdrawal inside an entry removes the text and carries it in a dated note.** Markdown strikethrough is not used anywhere in the record.
+**A withdrawal inside an entry removes the text and carries it in a dated note.** The one exception is a commit identifier, which §10 removes without carrying. Markdown strikethrough is not used anywhere in the record.
 
 ---
 
@@ -200,7 +200,11 @@ This document is itself governed by the model it describes: it states the rules 
 
 ## 9. Change record
 
-What this document used to say, and what changed it. No entries yet.
+What this document used to say, and what changed it.
+
+### 2026-10-08 — §10 replaces a commit identifier found in a tracked file, and §6 names the exception
+
+§10 gained the paragraph that begins _"An identifier already in a tracked file is replaced where it stands"_. §6's withdrawal rule gained its second sentence. Before this change, §6 read: _"**A withdrawal inside an entry removes the text and carries it in a dated note.** Markdown strikethrough is not used anywhere in the record."_ Until then the two sections disagreed about an identifier already in the record: §10 forbade it, and §6 would have carried it into a note. `F-19` found the case, and `D-13` decided it.
 
 ---
 
@@ -209,6 +213,8 @@ What this document used to say, and what changed it. No entries yet.
 **A commit identifier is a coordination token, and no tracked file uses one as a reference.** Between tasks that are running now a commit is exactly the thing to pass — the state a consolidator launches its passes on, the commit an implementer hands to a review — and it passes in a prompt, a message or a command. It is not written into a tracked file as an identifier, as evidence, as a status or as provenance. The rule is about what a token names, not how it is spelled.
 
 The reason is how work reaches `main`: a work branch can land squashed, so a commit cited from the branch resolves only while the branch is left undeleted. And an identifier carries nothing a reader can check by reading it, so a wrong one reads exactly like a right one.
+
+**An identifier already in a tracked file is replaced where it stands** by a name from the table below. That holds in the append-only record too. A dated note beside the replacement records that a commit identifier was replaced, and does not repeat it. This is the one withdrawal that does not carry the removed text, because the removed text is the violation, and the record loses nothing a reader could have checked. Evidence that a file holds an identifier describes the token, for example _a range of two commit identifiers_, rather than quoting it.
 
 ### What names a change instead
 
