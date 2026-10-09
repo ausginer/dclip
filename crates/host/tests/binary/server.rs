@@ -2,7 +2,7 @@ use crate::support::{PATIENCE, Scratch, await_pid, read_response, running};
 use std::{
     fs,
     io::{Read, Write},
-    os::unix::net::UnixListener,
+    os::unix::net::{UnixListener, UnixStream},
     thread,
     time::{Duration, Instant},
 };
@@ -95,6 +95,54 @@ exec cat "$DIR/payload""#,
         .unwrap();
     let tool = await_pid(&scratch.path("reading"));
     server.signal("TERM");
+    assert_eq!(server.wait().code(), Some(0));
+    assert!(!running(tool), "serve exited before reaping its tool");
+}
+
+#[test]
+fn should_stop_advertising_and_keep_the_lock_while_draining_on_a_signal() {
+    let scratch = Scratch::new();
+    scratch.write("types", b"image/png\n");
+    scratch.write("payload", b"\x89PNG\r\n\x1a\n");
+    // The read lasts until the test creates `release`, so the drain lasts
+    // exactly as long as the assertions need, within the tool's 4 s deadline.
+    scratch.tool(
+        "wl-paste",
+        r#"case "$1" in
+  --list-types) exec cat "$DIR/types" ;;
+esac
+echo $$ > "$DIR/reading.tmp" && mv "$DIR/reading.tmp" "$DIR/reading"
+while [ ! -e "$DIR/release" ]; do sleep 0.01; done
+exec cat "$DIR/payload""#,
+    );
+    let mut server = scratch.serve(&[]);
+    let mut stream = server.connect();
+    stream
+        .write_all(b"{\"op\":\"read\",\"type\":\"image/png\"}\n")
+        .unwrap();
+    let tool = await_pid(&scratch.path("reading"));
+    let signalled = Instant::now();
+    server.signal("TERM");
+    while scratch.socket().exists() {
+        assert!(
+            signalled.elapsed() < Duration::from_secs(1),
+            "the socket outlived the signal"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        UnixStream::connect(scratch.socket()).is_err(),
+        "a connect succeeded during the drain"
+    );
+    let successor = scratch.run(&["serve"]);
+    assert_eq!(successor.status.code(), Some(1), "{successor:?}");
+    assert!(
+        String::from_utf8_lossy(&successor.stderr).contains("already running"),
+        "{:?}",
+        String::from_utf8_lossy(&successor.stderr)
+    );
+    assert!(server.alive(), "the drain ended before its tool finished");
+    scratch.write("release", b"");
     assert_eq!(server.wait().code(), Some(0));
     assert!(!running(tool), "serve exited before reaping its tool");
 }

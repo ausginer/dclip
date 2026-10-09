@@ -208,8 +208,9 @@ scripts take their place. They cover:
   refuses a second instance, replacing a stale socket and refusing any other
   file at its path, the concurrency limit, and a clean exit on SIGTERM, SIGINT
   or SIGHUP that removes the socket at once, turns away a client still sending
-  its request and waits for requests already received, while a signal the
-  bridge was started with ignored stays ignored;
+  its request and waits for requests already received, holding its lock until
+  the last of them is answered, while any of these signals the bridge was
+  started with ignored stays ignored;
 - the server's checks, as functions rather than through the running server:
   the peer UID check, and a deadline on each connection however slowly the
   peer sends or reads, proved with short deadlines in place of the 12 s ones;
