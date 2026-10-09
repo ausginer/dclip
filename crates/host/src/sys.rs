@@ -32,7 +32,9 @@ extern "C" fn wake(_: libc::c_int) {
 
 /// Makes SIGTERM, SIGINT and SIGHUP write a byte to a pipe and returns its
 /// read end, which is readable from then on, whichever thread the signal
-/// reached. A handler that runs during a [`poll`] makes it fail with
+/// reached. A signal this process started with ignored stays ignored: whoever
+/// launched the bridge chose that it survive that signal, as `nohup` does for
+/// SIGHUP. A handler that runs during a [`poll`] makes it fail with
 /// `Interrupted`, and its callers retry; every other call that can block in
 /// the serving process goes through `std`, which retries `EINTR` itself.
 pub(crate) fn wake_on_termination() -> io::Result<PipeReader> {
@@ -42,13 +44,22 @@ pub(crate) fn wake_on_termination() -> io::Result<PipeReader> {
     // Never closed: a handler may run at any point until the process exits,
     // and must not write to a descriptor that has been reused.
     WAKE.store(writer.into_raw_fd(), Ordering::Relaxed);
-    // SAFETY: `action` is a valid, zero-initialised `sigaction` whose handler
-    // does only async-signal-safe work, and the old-action pointers are null.
+    // SAFETY: `action` and `inherited` are valid, zero-initialised `sigaction`
+    // values that outlive each call; the first call only reads the current
+    // action into `inherited`, and the handler `action` installs does only
+    // async-signal-safe work.
     unsafe {
         let mut action: libc::sigaction = std::mem::zeroed();
         action.sa_sigaction = wake as *const () as usize;
         libc::sigemptyset(&mut action.sa_mask);
         for signal in [libc::SIGTERM, libc::SIGINT, libc::SIGHUP] {
+            let mut inherited: libc::sigaction = std::mem::zeroed();
+            if libc::sigaction(signal, std::ptr::null(), &mut inherited) < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            if inherited.sa_sigaction == libc::SIG_IGN {
+                continue;
+            }
             if libc::sigaction(signal, &action, std::ptr::null_mut()) < 0 {
                 return Err(io::Error::last_os_error());
             }

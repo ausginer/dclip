@@ -1,5 +1,5 @@
 use crate::support::{Scratch, await_pid, running};
-use std::{fs, io::Write, os::unix::net::UnixListener};
+use std::{fs, io::Write, os::unix::net::UnixListener, thread, time::Duration};
 
 #[test]
 fn should_refuse_a_second_instance_while_the_first_holds_the_lock() {
@@ -72,4 +72,19 @@ exec cat "$DIR/payload""#,
     server.signal("TERM");
     assert_eq!(server.wait().code(), Some(0));
     assert!(!running(tool), "serve exited before reaping its tool");
+}
+
+#[test]
+fn should_keep_a_signal_ignored_when_serve_inherits_it_ignored() {
+    let scratch = Scratch::new();
+    scratch.clipboard(b"image/png\n", b"");
+    let mut server = scratch.serve_ignoring("HUP", &[]);
+    server.signal("HUP");
+    // Long enough for a bridge that handles the signal to have exited.
+    thread::sleep(Duration::from_millis(200));
+    assert!(server.alive(), "serve stopped on an ignored SIGHUP");
+    let response = server.request(b"{\"op\":\"types\"}\n");
+    assert_eq!(response.header["ok"], true);
+    server.signal("TERM");
+    assert_eq!(server.wait().code(), Some(0));
 }

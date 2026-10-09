@@ -89,14 +89,20 @@ esac"#,
     }
 
     pub fn command(&self, args: &[&str]) -> Command {
+        let mut command = Command::new(BINARY);
+        command.args(args);
+        self.environment(command)
+    }
+
+    /// Gives `command` the binary's environment: the stand-ins first on its
+    /// `PATH`, and this scratch directory's socket.
+    fn environment(&self, mut command: Command) -> Command {
         let mut path = self.dir.join("bin").into_os_string();
         if let Some(inherited) = std::env::var_os("PATH") {
             path.push(":");
             path.push(inherited);
         }
-        let mut command = Command::new(BINARY);
         command
-            .args(args)
             .env("PATH", path)
             .env("CLAUDE_CLIPBOARD_SOCKET", self.socket())
             .env_remove("CLIPBOARD_STATE");
@@ -137,7 +143,21 @@ esac"#,
     /// Starts `serve` and returns once it has announced itself, which it does
     /// after the socket is bound and its signal handlers are installed.
     pub fn serve(&self, args: &[&str]) -> Server {
-        let mut command = self.command(&[&["serve"], args].concat());
+        self.start(self.command(&[&["serve"], args].concat()))
+    }
+
+    /// Starts `serve` as [`Scratch::serve`] does, but with `signal` ignored
+    /// when it starts, the way `nohup` starts a program with SIGHUP ignored.
+    pub fn serve_ignoring(&self, signal: &str, args: &[&str]) -> Server {
+        let mut command = Command::new("/bin/sh");
+        command
+            .args(["-c", &format!("trap '' {signal}; exec \"$0\" serve \"$@\"")])
+            .arg(BINARY)
+            .args(args);
+        self.start(self.environment(command))
+    }
+
+    fn start(&self, mut command: Command) -> Server {
         let mut child = command
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -229,6 +249,11 @@ impl Server {
             assert!(Instant::now() < deadline, "serve did not exit");
             thread::sleep(Duration::from_millis(10));
         }
+    }
+
+    /// Whether the process has yet to exit.
+    pub fn alive(&mut self) -> bool {
+        self.child.0.try_wait().unwrap().is_none()
     }
 
     /// Whatever the process has written to stderr. Only after it has exited.
