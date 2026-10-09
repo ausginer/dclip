@@ -106,6 +106,8 @@ Canonical entry: `F-6` — shutdown on a timer, abandoned workers, fatal per-con
 
   > 2026-10-08 — The `EINTR` sentence in this bullet is falsified (`F-21`). The listener is non-blocking, and a non-blocking `accept` never sleeps, so no signal can fail it with `EINTR`. A probe saw none in 200,000 calls. The rest of the bullet stands.
 
+  > 2026-10-09 — The `accept` limb is narrowed (`F-29`). On Linux `AF_UNIX`, a peer that has gone stays queued and is accepted, so no `accept` error has been shown to concern one connection. Ending `serve` on one was never the per-connection defect this bullet counted. The socket-timeout and `thread::spawn` limbs stand.
+
 ### Structure and types (F-7)
 
 Canonical entry: `F-7`.

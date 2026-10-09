@@ -1,6 +1,6 @@
 # Refactoring plan
 
-The order in which `D-1`–`D-10`, and then `D-11` and `D-12`, land, what each phase must leave true, and how it is checked. The decisions are canonical in [`00-index.md`](../../00-index.md), and their required properties are the whole of what an implementer owes. This plan only sequences them.
+The order in which `D-1`–`D-10`, then `D-11` and `D-12`, and then `D-14` and `D-15`, land, what each phase must leave true, and how it is checked. The decisions are canonical in [`00-index.md`](../../00-index.md), and their required properties are the whole of what an implementer owes. This plan only sequences them.
 
 **Owner of each phase:** an `implementer` session. **After phase 4:** a review round, run by a fresh `consolidator`, and a manual end-to-end check on Fedora by the owner.
 
@@ -134,8 +134,44 @@ Exit:
 - The register gains `D-11` §Implemented and `D-12` §Implemented, each naming its sites and tests. Each finding this phase settles has its status line updated, and the journal records the phase.
 - The branch is pushed. A new round is the owner's to start.
 
+## Phase 6 — Remediate round `host-initial-refactoring-r2`
+
+Decisions: `D-14`, and `D-15`, which supersedes `D-11`. Findings: `F-25`–`F-31` and `F-34`. `F-32` and `F-33` were settled in the record, so they owe nothing here. `Q-1` stays out of scope.
+
+**Owner:** an `implementer` session. **After it:** a fresh `consolidator` for a third round, scoped to this phase.
+
+The register entries are what is owed, and this section only orders them. The rhythm is phase 5's. Where a defect can be shown, write the test first and see it fail for the reason the finding gives, then fix it. Where it cannot, the step says what shows the test's strength instead. Commit each step separately.
+
+| Step | Entry                   | Test first, and what it should show before the change                                                                                                                                                                                         | Change                                                                                                                                                                                                                                                                          |
+| ---- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 6.1  | `D-15` (`F-26`)         | Run the binary suite under `sh -c "trap '' HUP INT; exec cargo test --test binary"`. `should_remove_the_socket_and_exit_0_on_a_termination_signal` fails after `PATIENCE` with `serve did not exit`.                                                     | Every `serve` a binary test starts begins with SIGTERM, SIGINT and SIGHUP at their default dispositions, by way of `env --default-signal`. The same run then passes. `test-architecture.md` §The layers says the layer needs GNU coreutils 8.31 or later, and its change record carries the old wording. Do this first, because 6.2–6.4 add signal tests. |
+| 6.2  | `D-15` (`F-30`, `F-31`) | In a scratch copy, make `sys::wake_on_termination` honour an inherited ignore for SIGHUP only. Today's suite passes. The new SIGINT and SIGTERM rows fail.                                                                                       | The inherited-ignore test covers each of the three signals, stopping `serve` with another handled signal. `serve_ignoring` takes only what the suite varies. `README.md` step 2 says that any of the three signals the bridge was started with ignored stays ignored.                         |
+| 6.3  | `D-15` (`F-29`)         | Nothing fails before, because the exit status does not change. Show the witness's strength instead: in a scratch copy of the changed loop, let an interrupted `poll` fall through to `accept`, and the idle-signal test fails with exit 1. The vanished-peer witness passes before and after. | An interrupted `poll` is retried as a `poll`. `accept` is called only after the listener is reported ready, and none of its errors is retried. The comment where `poll` is retried says that this retry is how a handled signal reaches the wake pipe. The comment about a vanished connection goes. Check that the doc comment on `sys::wake_on_termination` is still true. |
+| 6.4  | `D-15` (`F-27`)         | The ordering witness passes against the code. Show its strength: in a scratch copy, each of `F-27`'s two mutations fails it. One drops the bridge after the scope, and the other releases the lock before the join.                                                     | No production change. `README.md` §Tests and limitations names the ordering among what the tests cover only once the witness exists.                                                                                                                                               |
+| 6.5  | `D-14` (`F-25`)         | Python, with the order of events forced: a stand-in host writes an error response and closes before the shim sends. Before the change, the shim raises `BrokenPipeError` rather than the message. The second witness, a host that closes without a response, passes before and after, because it guards the change. | `bridge.py` reads the response after a failed send, and reports the failed send when no response arrives. `test-architecture.md` §The layers and `README.md` §Tests and limitations say that the Python tests cover the shim's reading of a response.                                     |
+| 6.6  | `F-28`                  | None. This is a change to a test. Show its strength: in a scratch copy, `F-12`'s `admit` mutation still fails it. Then repeat the journal's parallel runs, at least 8, which is how many showed the flake, and record the count.         | After the sixteen idle connections close, the exchange follows `D-14`'s client rule. It reads the response whether or not its send succeeded, and reads it by the framing. It retries only on the limit refusal, and an I/O error fails the test. Its comment says so.                    |
+| 6.7  | `F-34`                  | None. This is a parameter type.                                                                                                                                                                                                              | `clipboard::set_x11_text`, and the seam in `sync.rs` that calls it, borrow the text.                                                                                                                                                                                                 |
+
+Notes on the sequence:
+
+- **6.3 removes code, but adds no behaviour.** The idle-signal test from 6.1 is its witness, now for all three signals and under any runner. Do not reintroduce an `accept` retry to make a test pass. If an `accept` error appears in a run, it is new evidence against `D-15`'s premise, so stop and report it.
+- **6.4: the drain must be held open by the test, not by a sleep.** A stand-in tool that waits for the test to release it gives a drain exactly as long as the assertions need. `should_reap_an_in_flight_requests_tool_before_exiting_on_a_signal` can carry the new limbs, or a sibling test can. That choice is the implementer's.
+- **6.5 is the only step that touches `bridge.py`.** The protocol's bytes do not change, and the host is not touched for `F-25`.
+- **6.6 depends on 6.5 only for the rule.** The Rust client in the test follows the same rule the shim now does.
+
+Exit:
+
+- Each step's test failed for its stated reason before its change, or its strength was shown as the step says, and passes after it.
+- The gates in [`handoff.md`](../../../.agents/docs/handoff.md) §Verify what you changed pass: `cargo fmt`, clippy with `-D warnings`, `cargo test --workspace` and the musl-target test command. The Python suite also passes, because `bridge.py` changed. The binary suite also passes under `trap '' HUP INT`.
+- The release musl binary is measured against phase 5's 611,072 bytes (`CONTRIBUTING.md` §15). Any delta beyond ±2% is recorded with its cause.
+- The register gains `D-14` §Implemented and `D-15` §Implemented, each naming its sites and tests. The status lines of `F-25`–`F-31` and `F-34` are updated, and the journal records the phase.
+- The branch is pushed. A new round is the owner's to start.
+
 ## Out of scope
 
-- `bridge.py` and `test_bridge.py`. The protocol does not change, so the shim and its suite are untouched. The Python suite still runs whenever a phase touches framing, as `handoff.md` requires.
+- `bridge.py` and `test_bridge.py`, except in phase 6 (`D-14`). The protocol does not change, so the shim and its suite are otherwise untouched. The Python suite still runs whenever a phase touches framing, as `handoff.md` requires.
+
+  > 2026-10-09 — This bullet read: _"`bridge.py` and `test_bridge.py`. The protocol does not change, so the shim and its suite are untouched."_ `F-25` showed that the shim loses a refusal the host has delivered. `D-14` makes reading it the shim's job, so phase 6 changes the shim. The protocol still does not change.
 - The text-sync policy itself: which states sync, whether sensitive content syncs, and the image-versus-text race that only the compositor could close.
 - `Q-1`, the watcher's death while serving. It waits for the owner. The structure from `D-7` makes the recommended answer a small change.
+- CI packaging. The owner keeps it as a separate follow-up.

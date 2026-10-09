@@ -149,3 +149,35 @@ Canonical entry: `D-13`.
 - **Leave the identifier, because the record is append-only.** Rejected. The violation stays, and the token still resolves to nothing once the branch is squashed.
 - **Withdraw it under §6, carrying the old sentence in a note.** Rejected. The note would carry the identifier, so the violation moves rather than goes.
 - **Rewrite the sentence with no note.** Rejected. A record edited without a note cannot be told apart from one that was always so. The note records that an edit was made.
+
+### Refusal delivery (D-14)
+
+Canonical entry: `D-14`.
+
+- **The host reads the request before it refuses.** Rejected. The refusals happen on the accept thread, so a peer that never sends would hold every other connection behind it for up to a request phase. `CONTRIBUTING.md` §1.1 puts the peer outside the trust boundary.
+- **The host hands each refusal to a thread, or to a timed queue that reads the request and then closes.** Rejected. A refusal would then cost what a worker costs, so the concurrency limit would stop bounding the bridge's work. A queue is new machinery on the accept loop, a timer included, for something the client can do in its own read.
+- **The host shuts down its write side and keeps the stream open until the peer has sent.** Rejected for the same reason. The host would hold a descriptor for as long as the peer chose, unless a timer bounded it.
+- **Both sides change.** Rejected. The shim's change alone took the loss from 62 of 150 refusals to none under load, and nothing a host change could add was left to buy.
+- **Record that a refusal may surface as a broken connection.** Rejected. The refused-UID message is the one `README.md` §Access errors sends a user to for the `--allow-uid` remedy. Losing it is Tier A, and the remedy is a few lines in the shim.
+
+### Server lifecycle, corrected again (D-15)
+
+Canonical entry: `D-15`, which supersedes `D-11`. `D-11`'s alternatives above still stand.
+
+**The `accept` retries (`F-29`):**
+
+- **Keep the `WouldBlock` arm and correct its reason.** This is the least the finding asks for. Rejected. A clean exit on a signal would still depend on one call falling through to another call's error. The retry belongs where the interruption happens, which is `poll`.
+- **Keep `ConnectionAborted` as defence in depth.** Rejected, as `SA_RESTART` was (`F-21`). No probe has produced it on `AF_UNIX`, and the reason it would carry is false.
+- **Retry every `accept` error.** Rejected. The listener stays readable, so an error that persists, such as running out of descriptors, would make the loop spin instead of ending `serve` with the error.
+
+**Inherited dispositions in the binary layer (`F-26`):**
+
+- **Check the runner's dispositions in `/proc/self/status` and fail with a message that names them.** Rejected as the remedy, although it satisfies the finding's second limb. The property would go unwitnessed in exactly the environment that lacks it, and a precondition a test can establish should be established rather than reported.
+- **Skip the signal tests when a disposition was inherited as ignored.** Rejected. The coverage would disappear silently, possibly in the image build, which nobody watches run.
+- **Reset the dispositions with `sigaction` in the test support.** Rejected. `unsafe` is confined to `sys` (`D-1`), and the lint table denies it everywhere else.
+- **Start `serve` through `timeout`, which happens to reset them.** Rejected. It does so as a side effect, so a reader cannot see why it is there. `env --default-signal` says what it is for.
+- **A helper in Python or a second binary.** Rejected. `D-2` provisions `/bin/sh` and coreutils only.
+
+**The ordering witnesses (`F-27`):**
+
+- **Record the two orderings as held by construction only.** Rejected. `F-11` was a Tier A defect in exactly this ordering. Both mutations pass today, and a witness with no timing race exists: a request whose tool the test holds keeps the drain open for as long as the test needs.

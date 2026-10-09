@@ -233,3 +233,76 @@ The Python suite passes and is untouched.
 - A fresh `consolidator` for a second round, scoped to this phase.
 - The owner's Fedora check and the Docker build. The Docker CLI is still absent here.
 - `Q-1`.
+
+## 2026-10-09 — Rulings on round `host-initial-refactoring-r2` (architect)
+
+**Session.** Architect role on branch `host/initial-refactoring`. `Effort guard active` was present at start.
+
+- **Scope.** `F-25`, `F-26` and `F-29`, which the round routed to the architect. `F-32` and `F-33`, settled here as the owner asked. A remediation handoff for `F-25`–`F-34`. A recheck of the tests and comments that the affected superseded decisions cite.
+- **Out of scope.** `Q-1`, and CI packaging, which the owner keeps as a separate follow-up.
+- **Read.** The round summary and all four pass reports in full, and the code behind each routed finding: `server::serve`, `sys::wake_on_termination`, `bridge.py`'s `request_host`, and the binary test support and server tests. The crate is unchanged since the round's reviewed state.
+
+**Probed.** On scratch copies of the reviewed state, on the repository's devcontainer with 12 CPUs and kernel 7.2.7. No probe was retained.
+
+- **`F-25`.** The real shim, against `serve` with sixteen held places, ran 150 refusals per configuration:
+  - unchanged: 2 lost on an idle machine, and 62 with two busy loops per CPU;
+  - changed to read the response after a failed send: none lost in either.
+- **`F-29`.** A copy that retries an interrupted `poll` as a `poll`, and retries no `accept` error:
+  - for each of SIGTERM, SIGINT and SIGHUP, 20 of 20 idle exits were clean, with status 0 and nothing on stderr;
+  - it served a request after 900 peers had connected and gone away before being accepted;
+  - all 19 binary tests passed.
+- **`F-26`.** Under `trap '' HUP INT`, a copy that starts `serve` through `env --default-signal=TERM,INT,HUP` passed all 8 server binary tests. In the same runner, the reviewed state's termination test failed after 10.02 s. `env` here is GNU coreutils 9.7. The image builder is Debian bookworm, whose coreutils 9.1 has the option, added in 8.31.
+
+**Ruled:**
+
+| Finding        | Ruling                                                                                                                                                         | Recorded in                     |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------- |
+| `F-25`         | The refusal is always delivered, and reading it is the client's job. The shim reads the response after a failed send. The host never waits on a refused peer, and is unchanged. | `D-14`                          |
+| `F-26`         | Every `serve` a binary test starts gets default dispositions through `env --default-signal`, which `D-2`'s coreutils admits. The precondition is established, not merely reported. | `D-15`, superseding `D-11`      |
+| `F-29`         | An interrupted `poll` is retried as a `poll`, so a signal no longer depends on an `accept` falling through. `accept` is called only on readiness, and none of its errors is retried. `F-6`'s `ECONNABORTED` example is withdrawn with a note, and so is its counterpart in `analysis.md`. | `D-15`, `F-6`                   |
+| `F-27`, `F-30` | Each is owed a test, not a statement. They are listed among `D-15`'s witnesses.                                                                                | `D-15`                          |
+| `F-28`         | Now that `F-25` is ruled, the test's exchange follows `D-14`'s client rule and absorbs no I/O error.                                                            | `D-15`                          |
+| `F-34`         | `D-10` fixes the seam as a closure, not the type of its parameter. Borrowing is owed, and it decides no contract.                                               | `F-34` status                   |
+| `F-32`         | The model comment now states the lock-after-path constraint, which `D-15` requires.                                                                            | `documentation.md` §5.1 and §9  |
+| `F-33`         | The folder README's status names this state.                                                                                                                 | [`README.md`](README.md)        |
+
+`F-31` stays with the implementer, as routed. [`plan.md`](plan.md) §Phase 6 orders everything owed.
+
+**Rechecked.** The round's closing note asked for the tests and comments named by each superseded decision's §Implemented clause to be checked. They are below, read at the reviewed state.
+
+- **`D-7`, superseded by `D-11`:**
+  - **Gone:** `SA_RESTART`.
+  - **True under `D-15`:**
+    - the doc comment on `sys::wake_on_termination`, which says that `poll`'s callers retry `Interrupted`;
+    - the field-order comment on `server::Bridge`;
+    - `server::admit`;
+    - the unit tests `should_refuse_a_peer_whose_uid_is_not_allowed`, `should_refuse_a_connection_while_every_place_is_taken` and `should_release_a_place_when_its_connection_is_done`. They pin messages and counting, and nothing in them rests on a retired fragment.
+  - **`should_remove_the_socket_and_exit_0_on_a_termination_signal`.** It still expects `D-7`'s unconditional handling. That is `F-26`, step 6.1.
+  - **`should_reap_an_in_flight_requests_tool_before_exiting_on_a_signal`.** It holds. It has the same unstated dependency on the runner's SIGTERM, which step 6.1 removes, and it is the natural carrier for `F-27`.
+- **`D-9`, superseded by `D-12`.** `handle-stdio` is absent from `cli::parse` and `main`. The test `D-9` names is deleted, and `D-12`'s usage table carries its row. `D-9`'s text still names the deleted test. That entry is inactive and append-only, so it stays.
+- **`D-11`, superseded here by `D-15`:**
+  - **Hold:**
+    - the dispositions read in `sys::wake_on_termination`;
+    - `Bridge` dropping inside the scope, with the lock dropped after it;
+    - `Deadline::or_until_shutdown`, with the unit tests `should_turn_away_a_request_still_arriving_at_shutdown` and `should_read_a_request_that_arrived_before_shutdown`;
+    - `should_unadvertise_at_once_and_turn_away_an_idle_peer_on_a_signal`. It holds, but it is not an ordering witness (`F-27`).
+  - **Change:**
+    - the `accept` arms, and their comment about a vanished connection (`F-29`, step 6.3);
+    - the concurrency test's retry and its comment (`F-28`, step 6.6);
+    - `should_keep_a_signal_ignored_when_serve_inherits_it_ignored` and `serve_ignoring`, together with the latter's `nohup` doc comment (`F-30`, `F-31`, step 6.2).
+- **Outside the code**, the retired premises now carry notes or are owed changes:
+  - `F-6`'s note and `analysis.md`, for `ECONNABORTED`, with notes added here;
+  - `documentation.md` §5.1, for `D-4`'s retired stdin writer (`F-32`);
+  - `README.md` step 2, which names SIGHUP alone (`F-30`, step 6.2).
+
+**Judgement calls an owner may want to revisit:**
+
+- **The shim owes refusal delivery, and the host does not.** A third-party client that sends before it reads, and stops at a failed send, can still miss a refusal. `D-14` states the client rule rather than defending against such a client.
+- **No `accept` error is retried.** An error that no probe has produced would now end `serve` with status 1 rather than being retried. `F-21`'s ruling applies here: no guard against a failure the process has not been shown to meet.
+- **The binary layer needs GNU `env`.** A non-GNU coreutils, such as busybox, would fail at the start of every `serve` test, with `env`'s own error in the failure.
+- **`F-27` is owed tests rather than a statement.** The finding allowed either.
+
+**Waiting:**
+
+- [`plan.md`](plan.md) §Phase 6, for an implementer.
+- Then a third review round, the owner's Fedora check, the Docker build, and `Q-1`.

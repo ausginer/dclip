@@ -97,7 +97,7 @@ A rule illustrated by _the release binary measured at 600 kB_ describes one buil
 
 - Present tense, describing what the code is and what must hold for it to be correct.
 - **Preconditions the code relies on and cannot check belong here and are load-bearing** — _the socket directory is owned by the serving user_, _the request line is at most 4096 bytes_. `CONTRIBUTING.md` §1.1 deletes runtime guards on the strength of such sentences existing, so deleting one silently converts a documented boundary into an undocumented one.
-- **State a constraint that holds and the consequence of breaking it.** _The child is killed before the stdin writer is joined; joining first blocks forever on a tool that stopped reading_ is a working comment. It stops a specific edit.
+- **State a constraint that holds and the consequence of breaking it.** _The lock is released only after the socket path is removed; an instance that unlocks first can delete the socket a successor has just bound_ is a working comment. It stops a specific edit.
 - **One bare pointer is allowed** — `(D-7)` — as an index entry into the record. It carries no argument; it says where the argument is.
 - **No strikethrough, no dates, no phase numbers, no review-file narration, no vote counts.** A superseded sentence is deleted. If it needs to be preserved, the record preserves it.
 - **Argue for what is, never about what was.** A comment may say why the current shape is the right one and what the obvious alternative gets wrong — that is a constraint on the next edit, stated where the edit happens. It may not narrate that the alternative was considered, by whom, or when. State the alternative's property, not the deliberation.
@@ -205,6 +205,10 @@ What this document used to say, and what changed it.
 ### 2026-10-08 — §10 replaces a commit identifier found in a tracked file, and §6 names the exception
 
 §10 gained the paragraph that begins _"An identifier already in a tracked file is replaced where it stands"_. §6's withdrawal rule gained its second sentence. Before this change, §6 read: _"**A withdrawal inside an entry removes the text and carries it in a dated note.** Markdown strikethrough is not used anywhere in the record."_ Until then the two sections disagreed about an identifier already in the record: §10 forbade it, and §6 would have carried it into a note. `F-19` found the case, and `D-13` decided it.
+
+### 2026-10-09 — §5.1's model comment states a constraint that holds
+
+§5.1's example of a working comment read: _"The child is killed before the stdin writer is joined; joining first blocks forever on a tool that stopped reading"_. `D-4` §Adjudicated found that this constraint did not guard what it claimed to. `D-4` §Remediated then removed the writer thread, so the example described code that no longer existed. `F-32` found it. The new example is a constraint that `D-15` requires, so it can go stale only through a decision that supersedes `D-15`. The rule itself did not change.
 
 ---
 
