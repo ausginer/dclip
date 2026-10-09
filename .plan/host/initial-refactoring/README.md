@@ -2,7 +2,7 @@
 
 Turn `crates/host` from a single script-shaped file into a structured crate that is typed and fast, tested in separate files and at the binary's own surface, and that fixes the defects the analysis found on the way.
 
-**Status:** phases 1–4 were implemented on 2026-10-06. Round `host-initial-refactoring-r1` reviewed them on 2026-10-07, and its routed findings were ruled on 2026-10-08. Phase 5, the remediation of that round, was implemented on 2026-10-09. Round `host-initial-refactoring-r2` reviewed it the same day, and its routed findings were ruled on 2026-10-09. Phase 6, the remediation of round r2, was implemented on 2026-10-09. Next are a third review round, scoped to phase 6, the owner's end-to-end check on Fedora and the Docker build.
+**Status:** phases 1–4 were implemented on 2026-10-06. Round `host-initial-refactoring-r1` reviewed them on 2026-10-07, and its routed findings were ruled on 2026-10-08. Phase 5, the remediation of that round, was implemented on 2026-10-09. Round `host-initial-refactoring-r2` reviewed it the same day, and its routed findings were ruled on 2026-10-09. Phase 6, the remediation of round r2, was implemented on 2026-10-09. The same day the owner deferred the third round, `host-initial-refactoring-r3`, until the work in [`packaging/`](../../packaging/README.md) is implemented, and widened it to the complete project. That work also carries the owner's end-to-end check on Fedora and the first run of the Docker build.
 
 ## Reading order
 

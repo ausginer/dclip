@@ -140,6 +140,8 @@ Decisions: `D-14`, and `D-15`, which supersedes `D-11`. Findings: `F-25`–`F-31
 
 **Owner:** an `implementer` session. **After it:** a fresh `consolidator` for a third round, scoped to this phase.
 
+> 2026-10-09 — The third round no longer follows this phase directly. The owner deferred it until the stages in [`packaging/plan.md`](../../packaging/plan.md) are implemented, and widened its scope to the complete project. The sentence above is left as it was planned.
+
 The register entries are what is owed, and this section only orders them. The rhythm is phase 5's. Where a defect can be shown, write the test first and see it fail for the reason the finding gives, then fix it. Where it cannot, the step says what shows the test's strength instead. Commit each step separately.
 
 | Step | Entry                   | Test first, and what it should show before the change                                                                                                                                                                                         | Change                                                                                                                                                                                                                                                                          |
@@ -175,3 +177,5 @@ Exit:
 - The text-sync policy itself: which states sync, whether sensitive content syncs, and the image-versus-text race that only the compositor could close.
 - `Q-1`, the watcher's death while serving. It waits for the owner. The structure from `D-7` makes the recommended answer a small change.
 - CI packaging. The owner keeps it as a separate follow-up.
+
+  > 2026-10-09 — The follow-up is planned in [`packaging/plan.md`](../../packaging/plan.md), under `D-16`–`D-19`.
