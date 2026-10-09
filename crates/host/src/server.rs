@@ -279,6 +279,10 @@ pub(crate) fn serve(options: &ServeOptions) -> Result<()> {
             let slot = match admitted {
                 Ok(slot) => slot,
                 Err(error) => {
+                    // If the stream could not be made non-blocking, this
+                    // breaks `Deadline`'s precondition and the write may
+                    // block. It never does: a refusal is one short line, and
+                    // nothing has been written to this stream before it.
                     let _ = write_response(Deadline::new(&stream, PHASE), Err(error));
                     continue;
                 }

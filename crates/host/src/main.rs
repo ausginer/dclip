@@ -13,7 +13,7 @@ mod sys;
 use std::env;
 
 /// Every error ends as text, so it is a boxed message.
-pub(crate) type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+pub(crate) type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn main() {
     let args = env::args().skip(1).collect::<Vec<_>>();
