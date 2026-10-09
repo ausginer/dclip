@@ -456,7 +456,7 @@ Each place carries a dated note. A search of `.plan/`, `.agents/`, `README.md` a
 
 #### D-14 — A refused client reads the refusal whatever became of its request, and the bridge never waits on a refused peer
 
-2026-10-09 · Accepted · Addresses `F-25` · Alternatives in [`decisions.md`](host/initial-refactoring/decisions.md)
+2026-10-09 · Accepted · Implemented 2026-10-09 · Addresses `F-25` · Alternatives in [`decisions.md`](host/initial-refactoring/decisions.md)
 
 The bridge refuses a connection by writing an error response and closing the stream with whatever the peer sent left unread. That covers every refusal in the accept loop, which `D-15` lists, and a request turned away at shutdown. The response is always delivered. Its bytes are in the peer's receive queue before the close, and the reset that an unread request causes replaces only the end of stream that follows them. What a peer can lose is its chance to read them. A send that lands after the close fails with `EPIPE`, and `bridge.py` sent before it read, so it raised `Broken pipe` without looking at the refusal already waiting for it (`F-25`).
 
@@ -485,9 +485,20 @@ Required properties:
   - the stand-in closes without writing anything before the shim sends, and the shim reports the failed send.
 - `test-architecture.md` §The layers and `README.md` §Tests and limitations say that the Python tests also cover the shim's reading of a response.
 
+##### D-14 §Implemented
+
+2026-10-09 · Branch `host/initial-refactoring`.
+
+- **The shim.** `bridge.py`'s `request_host` keeps the `OSError` of a failed `sendall` and reads the header line all the same. If no header parses after a failed send, it raises the failed send. That covers an end of stream, a reset and a partial line. It still reads by the framing, `readline(4097)` then `read(size)`, so it never reads to end of stream.
+- **The host** is unchanged.
+- **Tests.** In `test_bridge.py`, `RequestHostTest` runs `request_host` against a stand-in host on a real socket. The stand-in accepts, writes its response or nothing, and closes, and only then does the shim's `connect` return, so the order is forced:
+  - `test_should_report_a_refusal_that_arrived_before_the_request_was_sent` failed before the change with `BrokenPipeError`, and passes after it;
+  - `test_should_report_the_failed_send_when_no_response_arrives` passes before and after, with `BrokenPipeError`.
+- **Measured** with a scratch probe, not retained. The real shim ran 150 refusals against the release `serve` with sixteen places held, idle and under two busy loops per CPU. The changed shim lost none in either. The unchanged shim, in the same probe, lost none idle and 102 under load.
+
 #### D-15 — `D-11`'s lifecycle, with `accept` retrying nothing and witnesses that hold whatever the runner ignores
 
-2026-10-09 · Accepted · Supersedes `D-11` · Addresses `F-6`, `F-10`, `F-11`, `F-21`, `F-26`, `F-27`, `F-28`, `F-29`, `F-30` · Alternatives in [`decisions.md`](host/initial-refactoring/decisions.md)
+2026-10-09 · Accepted · Implemented 2026-10-09 · Supersedes `D-11` · Addresses `F-6`, `F-10`, `F-11`, `F-21`, `F-26`, `F-27`, `F-28`, `F-29`, `F-30` · Alternatives in [`decisions.md`](host/initial-refactoring/decisions.md)
 
 `D-11`'s lifecycle stands:
 
@@ -560,6 +571,27 @@ Required properties:
   - **`should_reap_an_in_flight_requests_tool_before_exiting_on_a_signal` still passes.**
 - **The arms that `F-14` §Ruling waived stay waived.**
 - **`README.md`** step 2 says, for each of the three signals, that one the bridge was started with ignored stays ignored. §Tests and limitations states what the witnesses above cover.
+
+##### D-15 §Implemented
+
+2026-10-09 · Branch `host/initial-refactoring`.
+
+- **The accept loop.** `server::serve` retries an `Interrupted` `poll` with `continue`. The comment there says that this retry is how a handled signal reaches the wake pipe. `accept` is called once `poll` has returned with the wake pipe not ready, and any error it returns ends `serve` through `?`. The comment about a vanished connection is gone. The doc comment on `sys::wake_on_termination`, which says that `poll`'s callers retry `Interrupted`, is still true.
+- **Unchanged from `D-11` §Implemented:** the dispositions read in `sys::wake_on_termination`, the handlers without `SA_RESTART`, `server::Bridge` dropping inside the scope, the lock dropped after it, and `Deadline::or_until_shutdown`.
+- **The binary layer.** `Scratch::command` starts every binary through `env --default-signal`, with SIGTERM, SIGINT and SIGHUP restored apart from a signal the test ignores. That signal is passed to `env --ignore-signal`. `Scratch::serve_ignoring` takes only the signal.
+
+Tests, all binary:
+
+- `should_remove_the_socket_and_exit_0_on_a_termination_signal`, which now also asserts an empty stderr, is the idle-signal witness. In a scratch copy where an interrupted `poll` falls through to `accept`, it fails with exit status 1. So do the inherited-ignore, idle-peer and in-flight-reap tests.
+- `should_keep_a_signal_ignored_when_serve_inherits_it_ignored` has one row per signal, each stopped by another handled signal. In a scratch copy that keeps an inherited ignore for SIGHUP only, the SIGTERM row fails, and so does the SIGINT row when run alone. The previous suite passes against that copy.
+- `should_stop_advertising_and_keep_the_lock_while_draining_on_a_signal` is the ordering witness. Its stand-in tool runs until the test releases it. It fails under each of `F-27`'s mutations:
+  - with the bridge dropped after the scope, the socket path outlives the signal;
+  - with the lock released at the end of the loop, before the join, the successor `serve` starts. In this variant, no other test fails. A variant that releases the lock before the scope also fails `should_refuse_a_second_instance_while_the_first_holds_the_lock`.
+- `should_keep_serving_after_peers_that_left_before_they_were_accepted` connects fifteen peers while `serve` is stopped by SIGSTOP. Five leave at once, five after part of a request, and five after a whole one. After SIGCONT, a request is served. There are fifteen so that the request never meets the limit of sixteen. A first version with thirty failed 9 of 40 parallel runs, because its request was refused and read to end of stream.
+- `should_refuse_a_connection_over_the_limit_and_keep_serving` reads each response through `support::read_framed`, retries only the limit's refusal, and fails on any I/O error. It still fails under `F-12`'s `admit` mutation.
+- `should_unadvertise_at_once_and_turn_away_an_idle_peer_on_a_signal` and `should_reap_an_in_flight_requests_tool_before_exiting_on_a_signal` pass unchanged.
+
+The whole binary suite passes under `sh -c "trap '' HUP INT; exec cargo test …"`. The arms `F-14` §Ruling waived stay waived.
 
 ---
 
@@ -805,7 +837,7 @@ Required property: the refusal of unknown invocations is pinned where the record
 
 #### F-25 — A refusal is lost when the peer's send lands after the bridge closes, and the shim sends first
 
-2026-10-09 · Tier A · Routed to the architect (`D-11`; host or shim) · Ruled 2026-10-09 by `D-14`: the shim owes it, and the host is unchanged · Remediation in [`plan.md`](host/initial-refactoring/plan.md) §Phase 6 · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`reviewer-1`, `integrity-1`, `cleanup-2`)
+2026-10-09 · Tier A · Routed to the architect (`D-11`; host or shim) · Ruled 2026-10-09 by `D-14`: the shim owes it, and the host is unchanged · Settled 2026-10-09 by `D-14` §Implemented · Remediation in [`plan.md`](host/initial-refactoring/plan.md) §Phase 6 · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`reviewer-1`, `integrity-1`, `cleanup-2`)
 
 `serve` writes a refusal and closes the stream with the request unread. This happens for a refused UID, for the concurrency limit, for the other refusals in the accept loop, and for a request turned away at shutdown with `bridge is shutting down`. `bridge.py`'s `request_host` sends with `sendall` before it reads anything. If the close comes first, the send fails with `EPIPE`, and the shim prints `wl-paste: [Errno 32] Broken pipe` without reading the refusal already waiting in its receive queue.
 
@@ -815,7 +847,7 @@ Required property: a peer that is refused, or turned away at shutdown, learns wh
 
 #### F-26 — The termination-signal binary test fails a correct bridge when the runner inherited an ignored signal
 
-2026-10-09 · Tier B · Routed to the architect (`D-2`, `D-11`) · Ruled 2026-10-09 by `D-15`: every `serve` a binary test starts gets default dispositions through `env --default-signal` · Remediation in [`plan.md`](host/initial-refactoring/plan.md) §Phase 6 · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`der-1`, `reviewer-2`, `integrity-3`)
+2026-10-09 · Tier B · Routed to the architect (`D-2`, `D-11`) · Ruled 2026-10-09 by `D-15`: every `serve` a binary test starts gets default dispositions through `env --default-signal` · Settled 2026-10-09 by `D-15` §Implemented · Remediation in [`plan.md`](host/initial-refactoring/plan.md) §Phase 6 · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`der-1`, `reviewer-2`, `integrity-3`)
 
 `should_remove_the_socket_and_exit_0_on_a_termination_signal` expects SIGTERM, SIGINT and SIGHUP each to end `serve`. That is `D-7`'s unconditional property. `serve` inherits the runner's signal dispositions and, as `D-11` requires, keeps any that were ignored. Under `trap '' HUP`, under `trap '' INT`, or as a background job of a non-interactive shell, the test fails after 10 s with `serve did not exit`, and the message names no cause.
 
@@ -823,7 +855,7 @@ Required property: the binary layer's verdict on signal handling does not depend
 
 #### F-27 — Two of `D-11`'s shutdown-ordering properties have no witness
 
-2026-10-09 · Tier B · Open · Routed to the implementer · 2026-10-09: tests are owed, not a statement, as `D-15`'s witnesses · Remediation in [`plan.md`](host/initial-refactoring/plan.md) §Phase 6 · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`integrity-2`)
+2026-10-09 · Tier B · Routed to the implementer · 2026-10-09: tests are owed, not a statement, as `D-15`'s witnesses · Settled 2026-10-09 by `should_stop_advertising_and_keep_the_lock_while_draining_on_a_signal`, in `D-15` §Implemented · Remediation in [`plan.md`](host/initial-refactoring/plan.md) §Phase 6 · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`integrity-2`)
 
 Each of two mutations passes all 19 binary tests: dropping `bridge` after the scope instead of inside it, and releasing the lock before the join. `D-11` requires both that "the bridge stops advertising before any worker is joined" and that "the lock is released last". `README.md` lists the first among what the binary tests cover.
 
@@ -831,7 +863,7 @@ Required property: each shutdown-ordering property the register states can be fa
 
 #### F-28 — The concurrency test's retry gives the wrong mechanism and tolerates any I/O error
 
-2026-10-09 · Tier C · Open · Routed to the implementer, after `F-25` is ruled · `F-25` ruled 2026-10-09: the exchange follows `D-14`'s client rule and absorbs no I/O error, as `D-15` requires · Remediation in [`plan.md`](host/initial-refactoring/plan.md) §Phase 6 · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`reviewer-3`, `der-3`, `cleanup-2`)
+2026-10-09 · Tier C · Routed to the implementer, after `F-25` is ruled · `F-25` ruled 2026-10-09: the exchange follows `D-14`'s client rule and absorbs no I/O error, as `D-15` requires · Settled 2026-10-09 in `D-15` §Implemented · Remediation in [`plan.md`](host/initial-refactoring/plan.md) §Phase 6 · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`reviewer-3`, `der-3`, `cleanup-2`)
 
 The retry's comment in `should_refuse_a_connection_over_the_limit_and_keep_serving` says a refused connection "can reset it before the refusal is read". In fact an exchange fails in one of two ways. The send fails with `EPIPE`, or `read_to_end` hits `ECONNRESET` after it has already received the refusal. The loop retries every I/O error.
 
@@ -839,7 +871,7 @@ Required property: the retry tolerates the failures that actually occur, and no 
 
 #### F-29 — The accept loop's retries rest on a TCP premise, and the `WouldBlock` arm's real job is unstated
 
-2026-10-09 · Tier C · Routed to the architect (`D-11`) · Ruled 2026-10-09 by `D-15`: an interrupted `poll` is retried as a `poll`, and no `accept` error is retried · Remediation in [`plan.md`](host/initial-refactoring/plan.md) §Phase 6 · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`der-2`)
+2026-10-09 · Tier C · Routed to the architect (`D-11`) · Ruled 2026-10-09 by `D-15`: an interrupted `poll` is retried as a `poll`, and no `accept` error is retried · Settled 2026-10-09 by `D-15` §Implemented · Remediation in [`plan.md`](host/initial-refactoring/plan.md) §Phase 6 · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`der-2`)
 
 `D-11` and the code say `WouldBlock` is retried because "a connection that vanished" took the readiness. On Linux `AF_UNIX`, a vanished peer is still accepted: 600 of 600 times across three ways of leaving. No evidence was found that `ConnectionAborted` can occur. The `WouldBlock` arm does carry a different load, which nothing states. A signal interrupts `poll`, the loop falls through to an `accept` that returns `EAGAIN`, and that arm sends it back to `poll`. Without the arm, an idle bridge exits 1 on SIGTERM, 20 of 20 times.
 
@@ -847,7 +879,7 @@ Required property: each retry arm, and `D-11`'s statement of it, names a failure
 
 #### F-30 — Only SIGHUP's inherited ignore is witnessed, and `README.md` names it as the only exception
 
-2026-10-09 · Tier C · Open · Routed to the implementer · 2026-10-09: the witness for each signal and the README's wording are owed by `D-15` · Remediation in [`plan.md`](host/initial-refactoring/plan.md) §Phase 6 · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`integrity-4`)
+2026-10-09 · Tier C · Routed to the implementer · 2026-10-09: the witness for each signal and the README's wording are owed by `D-15` · Settled 2026-10-09 in `D-15` §Implemented, and `README.md` step 2 names all three signals · Remediation in [`plan.md`](host/initial-refactoring/plan.md) §Phase 6 · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`integrity-4`)
 
 `D-11` keeps an inherited ignore for all three signals. The only test ignores SIGHUP, and a mutation that honours the rule for SIGHUP alone passes. `README.md` step 2 says Ctrl+C or SIGTERM stops the bridge, and gives SIGHUP as the only inherited exception.
 
@@ -855,7 +887,7 @@ Required property: the README's account of when the bridge keeps running agrees 
 
 #### F-31 — `serve_ignoring` takes parameters its only caller fixes
 
-2026-10-09 · Tier C · Open · Routed to the implementer, with `F-30` · Remediation in [`plan.md`](host/initial-refactoring/plan.md) §Phase 6 · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`cleanup-3`)
+2026-10-09 · Tier C · Routed to the implementer, with `F-30` · Settled 2026-10-09: `Scratch::serve_ignoring` takes only the signal, which the suite varies · Remediation in [`plan.md`](host/initial-refactoring/plan.md) §Phase 6 · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`cleanup-3`)
 
 `Scratch::serve_ignoring(signal, args)` has one caller, which passes `"HUP"` and `&[]`.
 
@@ -879,7 +911,7 @@ Required property: the folder README's status names the state the journal and th
 
 #### F-34 — `set_x11_text` takes an owned `Vec<u8>` that nothing consumes
 
-2026-10-09 · Tier C · Open · Routed to the implementer · 2026-10-09: `D-10` fixes the seam as a closure, not its parameter's type, so borrowing is owed and decides no contract · Remediation in [`plan.md`](host/initial-refactoring/plan.md) §Phase 6 · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`cleanup-1`)
+2026-10-09 · Tier C · Routed to the implementer · 2026-10-09: `D-10` fixes the seam as a closure, not its parameter's type, so borrowing is owed and decides no contract · Settled 2026-10-09: `clipboard::set_x11_text` and the `set_x11_text` parameter of `sync::sync_text` take `&[u8]` · Remediation in [`plan.md`](host/initial-refactoring/plan.md) §Phase 6 · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`cleanup-1`)
 
 `capture` now borrows its input. `clipboard::set_x11_text`, and the seam in `sync.rs` that calls it, still take ownership.
 

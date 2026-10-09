@@ -306,3 +306,52 @@ The Python suite passes and is untouched.
 
 - [`plan.md`](plan.md) §Phase 6, for an implementer.
 - Then a third review round, the owner's Fedora check, the Docker build, and `Q-1`.
+
+## 2026-10-09 — Phase 6: remediation of round `host-initial-refactoring-r2` (implementer)
+
+**Session.** Implementer role on branch `host/initial-refactoring`. `Effort guard active` was present at start. `Q-1` and CI packaging stayed out of scope, as asked. One commit per step, plus one for a flaw in a step 6.3 test that the step 6.6 runs exposed (below). Every mutation ran in a scratch copy outside the checkout, and none was retained.
+
+| Step | Test first, and what it showed before the change | Change |
+| ---- | ------------------------------------------------ | ------ |
+| 6.1 `D-15` (`F-26`) | Under `sh -c "trap '' HUP INT; exec cargo test --test binary"`, `should_remove_the_socket_and_exit_0_on_a_termination_signal` failed after 10 s with `serve did not exit`. | `Scratch::command` starts every binary through `env --default-signal`, so the refusal and `sync-text` runs go through it as well. The same run then passed 19 of 19. `test-architecture.md` §The layers names GNU coreutils 8.31, and its change record carries the old sentence. |
+| 6.2 `D-15` (`F-30`, `F-31`) | In a copy that keeps an inherited ignore for SIGHUP only, the previous suite passed 19 of 19. The new test failed on its SIGTERM row, and on its SIGINT row when that row ran alone. | One row per signal, each stopped by another handled signal. `serve_ignoring(signal)` passes the signal to `env --ignore-signal`, and no shell is involved. `README.md` step 2 names all three signals. |
+| 6.3 `D-15` (`F-29`) | The idle-signal test now also asserts an empty stderr. With an interrupted `poll` falling through to `accept`, it failed with exit status 1, and so did three other signal tests. The new departed-peer test passed before and after. | `Interrupted` from `poll` is retried with `continue`, and the comment there says why. `listener.accept()?` replaces the retry arms. The `sys::wake_on_termination` doc comment needed no change. |
+| 6.4 `D-15` (`F-27`) | `should_stop_advertising_and_keep_the_lock_while_draining_on_a_signal` passed against the code. With the bridge dropped after the scope, it failed with `the socket outlived the signal`. With the lock released at the end of the loop, before the join, its successor `serve` started and ran. No other test failed under either mutation. | No production change. `README.md` §Tests and limitations names the lock held through the drain. |
+| 6.5 `D-14` (`F-25`) | The forced-order refusal test failed with `BrokenPipeError`. The no-response test passed with `BrokenPipeError`. | `request_host` reads the response after a failed send, and raises the failed send if no header parses. The text in `test-architecture.md` and `README.md` covers the Python layer's new reach. The former has a change-record entry. |
+| 6.6 `F-28` | With `F-12`'s `admit` mutation, the test still failed: the seventeenth connection got `timed out` after 12 s. | The exchange reads by the framing through `support::read_framed`, retries only the limit's refusal, and panics on any I/O error, naming the send's outcome. |
+| 6.7 `F-34` | None; a parameter type. | `set_x11_text` and its seam take `&[u8]`. |
+
+**Parallel runs (6.6).** The test executable for the binary suite ran 8 at a time. There were three idle rounds and two rounds under two busy loops per CPU, 40 runs in all, and all 40 passed with 21 tests each. The concurrency test never failed. The first time through, 9 of 32 runs failed, all in the departed-peer test from 6.3. It queued thirty departed peers against sixteen places, so its own request could be refused. Reading to end of stream then met the reset that `D-14` describes. It now queues fifteen, so that its request never meets the limit, and that fix is a commit of its own. An earlier pair of rounds is not counted. A script error gave the test binary a filter that matched nothing, so those runs executed zero tests.
+
+**`D-14` in the real shim.** A scratch probe ran 150 refusals of the real shim against the release `serve` with sixteen places held, with the held connections renewed before their 12 s phase ran out. The changed shim lost none, idle or under two busy loops per CPU. The unchanged shim lost none idle and 102 under load.
+
+**Gates.**
+
+- `cargo fmt` and clippy with `-D warnings` are clean.
+- `cargo test --workspace` passes, and so does `cargo test --target x86_64-unknown-linux-musl`: 37 unit and 21 binary tests.
+- The binary suite passes under `trap '' HUP INT`.
+- The Python suite passes, with 6 tests.
+- `rg -n unsafe crates/host/src` finds nothing outside `sys.rs`.
+- The normal dependency edges are still `libc` and `serde_json`.
+
+**Measured.**
+
+- **Binary.** The release musl binary is 611,072 bytes, the same as phase 5's figure. The text section is also unchanged, at 459,406 bytes. The binary still differs from a fresh build of phase 5's state, so the build did see the change.
+- **Attribution,** from `cargo bloat` against that build:
+  - the accept loop's scope closure grew by 9 bytes, from 6,584 to 6,593;
+  - `main` shrank by 16 bytes, from 6,282 to 6,266, where `sync_text` and `set_x11_text` are inlined;
+  - function alignment absorbs the net −7 bytes.
+- **Tests.** 58 Rust tests, up from 56 at phase 5, and 6 Python tests, up from 4.
+
+**Judgement calls an owner may want to revisit:**
+
+- **What a failed send hides.** After a failed send, the shim reports that failure for an end of stream, a reset, and a partial or malformed header line alike. The host writes no malformed header, so the last case only matters for a host the shim does not ship with.
+- **A smaller departed-peer witness.** It uses fifteen peers, three ways of leaving, and SIGSTOP to hold them unaccepted. The ruling's probe used 900, but this witness has to stay below the limit to be deterministic. A larger count would need the concurrency test's retry.
+- **The scope of the `env` wrapper.** Every binary invocation in the layer goes through `env`, not only `serve`, because one builder serves both. `sync-text` and the command-line refusals do not care.
+- **The rule in `CONTRIBUTING.md` §Tests** still says the binary tests need `/bin/sh` and coreutils, without GNU or 8.31. The plan named only `test-architecture.md`, so it was left unchanged.
+
+**Waiting:**
+
+- A fresh `consolidator` for a third round, scoped to this phase.
+- The owner's Fedora check and the Docker build. The Docker CLI is still absent here.
+- `Q-1`.
