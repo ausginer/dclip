@@ -36,8 +36,10 @@ layers it touches agree.
    not the bridge, so what these tests prove is the bridge's own lifecycle —
    binding, the lock, replacement of a stale socket, cleanup on a signal, the
    concurrency limit, the text-sync watcher — and the protocol as the socket
-   carries it. They need only `/bin/sh` and coreutils, so they run in the
-   default `cargo test`. The peer UID check and the per-connection deadlines
+   carries it. They need only `/bin/sh` and GNU coreutils 8.31 or later, so
+   they run in the default `cargo test`. Each starts the binary through `env
+   --default-signal`, so that no verdict on signal handling depends on a
+   signal the test runner inherited as ignored. The peer UID check and the per-connection deadlines
    are proved by the first two layers only: a refusal needs a second account,
    and the running server's 12 s phase is too long to wait out.
 4. **Python unit tests** — `test_bridge.py`, over the shim's argument
@@ -222,3 +224,10 @@ Changed by `F-12`, when a mutation of the running server's admission and of its 
 > binding, the lock, replacement of a stale socket, cleanup on a signal,
 > deadlines, the text-sync watcher — and the protocol as the socket carries
 > it.
+
+### 2026-10-09 — The binary layer's dependency on GNU `env`
+
+Changed by `D-15`, when the binary layer began to start every binary through `env --default-signal`. The third layer's dependency sentence read:
+
+> carries it. They need only `/bin/sh` and coreutils, so they run in the
+> default `cargo test`.

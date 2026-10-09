@@ -88,21 +88,32 @@ esac"#,
         );
     }
 
-    pub fn command(&self, args: &[&str]) -> Command {
-        let mut command = Command::new(BINARY);
-        command.args(args);
-        self.environment(command)
-    }
-
-    /// Gives `command` the binary's environment: the stand-ins first on its
-    /// `PATH`, and this scratch directory's socket.
-    fn environment(&self, mut command: Command) -> Command {
+    /// The binary with `args`, the stand-ins first on its `PATH` and this
+    /// scratch directory's socket. It starts through GNU `env`, so SIGTERM,
+    /// SIGINT and SIGHUP begin at their default dispositions whatever the test
+    /// runner inherited, apart from `ignored`, which begins ignored. The bridge
+    /// keeps a disposition it inherited as ignored, so without this a runner
+    /// under `nohup` would fail a correct bridge. A POSIX shell cannot restore
+    /// an inherited ignore; `env` can from coreutils 8.31 on.
+    fn command(&self, ignored: Option<&str>, args: &[&str]) -> Command {
+        let restored = ["TERM", "INT", "HUP"]
+            .into_iter()
+            .filter(|signal| Some(*signal) != ignored)
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut command = Command::new("env");
+        command.arg(format!("--default-signal={restored}"));
+        if let Some(signal) = ignored {
+            command.arg(format!("--ignore-signal={signal}"));
+        }
         let mut path = self.dir.join("bin").into_os_string();
         if let Some(inherited) = std::env::var_os("PATH") {
             path.push(":");
             path.push(inherited);
         }
         command
+            .arg(BINARY)
+            .args(args)
             .env("PATH", path)
             .env("CLAUDE_CLIPBOARD_SOCKET", self.socket())
             .env_remove("CLIPBOARD_STATE");
@@ -114,7 +125,7 @@ esac"#,
     /// fails the test rather than hanging it.
     pub fn run(&self, args: &[&str]) -> Output {
         let child = self
-            .command(args)
+            .command(None, args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -143,18 +154,13 @@ esac"#,
     /// Starts `serve` and returns once it has announced itself, which it does
     /// after the socket is bound and its signal handlers are installed.
     pub fn serve(&self, args: &[&str]) -> Server {
-        self.start(self.command(&[&["serve"], args].concat()))
+        self.start(self.command(None, &[&["serve"], args].concat()))
     }
 
     /// Starts `serve` as [`Scratch::serve`] does, but with `signal` ignored
     /// when it starts, the way `nohup` starts a program with SIGHUP ignored.
     pub fn serve_ignoring(&self, signal: &str, args: &[&str]) -> Server {
-        let mut command = Command::new("/bin/sh");
-        command
-            .args(["-c", &format!("trap '' {signal}; exec \"$0\" serve \"$@\"")])
-            .arg(BINARY)
-            .args(args);
-        self.start(self.environment(command))
+        self.start(self.command(Some(signal), &[&["serve"], args].concat()))
     }
 
     fn start(&self, mut command: Command) -> Server {
