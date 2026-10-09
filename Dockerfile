@@ -32,3 +32,5 @@ FROM rust AS musl
 RUN cargo test --locked --workspace --target x86_64-unknown-linux-musl \
     && cargo build --locked --release --target x86_64-unknown-linux-musl
 
+FROM scratch AS binary
+COPY --from=musl /home/builder/src/target/x86_64-unknown-linux-musl/release/dclip /dclip

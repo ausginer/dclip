@@ -7,3 +7,10 @@
 !crates/host/Cargo.toml
 !crates/host/src
 !crates/host/tests
+!bridge.py
+!test_bridge.py
+!.claude/agents
+!.claude/plugins
+!.claude/settings.json
+!.claude-plugin
+!.scripts
