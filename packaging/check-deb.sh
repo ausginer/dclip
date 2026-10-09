@@ -58,8 +58,7 @@ for relation in Pre-Depends Suggests Enhances Conflicts Breaks Replaces Provides
     expect "the package declares no $relation" "" "$(field "$relation")"
 done
 expect "the package has no maintainer scripts" \
-    "./
-./control
+    "./control
 ./md5sums" \
     "$(dpkg-deb --ctrl-tarfile "$package" | tar -t | sort)"
 
