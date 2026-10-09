@@ -58,9 +58,15 @@ pub(crate) fn set_x11_text(text: Vec<u8>) -> Result<()> {
 }
 
 /// Starts `wl-paste --watch`, which runs `executable sync-text` on every
-/// clipboard change. The watcher is killed when this process ends, so call it
-/// from the thread that lives for the whole of `serve`. A sync already running
-/// when the watcher dies finishes within its own tool deadlines.
+/// clipboard change, each in the watcher's process group.
+///
+/// - Dropping the returned [`Tool`], as a graceful shutdown does, kills that
+///   group: the watcher and every sync still running. A sync killed while it
+///   is still writing to `xsel` can leave X11 a truncated selection, which the
+///   next copy replaces.
+/// - If this process dies without dropping it, the kernel kills the watcher
+///   alone, so call this from the thread that lives for the whole of `serve`.
+///   A sync already running then finishes within its own tool deadlines.
 pub(crate) fn watch(executable: &Path) -> io::Result<Tool> {
     spawn(
         sys::kill_with_parent(&mut Command::new("wl-paste"))
