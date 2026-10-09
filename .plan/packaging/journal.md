@@ -43,3 +43,26 @@ A dated log of this work: what was done, what was found, what is waiting. Newest
 - The owner's Fedora check.
 - Round r3, over the complete project.
 - `Q-1` and `Q-2`.
+
+## 2026-10-09 — Stage 1: `lexopt` (implementer)
+
+**Session.** Implementer role on branch `host/initial-refactoring`. `Effort guard active` was present at start. The request: stage 1 of [`plan.md`](plan.md), following `D-16` and `F-35`, then push and hand off for stage 2. The owner also answered `Q-2` with Apache-2.0, to be carried into both package formats in stage 2.
+
+**Done.** `D-16` §Implemented in the register has the sites, the tests and the measurement. `F-35` is settled there. `CONTRIBUTING.md` §Language and platform names `lexopt`, and its change record carries the replaced sentence.
+
+**Commits.** Three steps, each with the gates passing at its end. The support change, which lets `Scratch::run` take OS strings, is its own commit. The new rows and the parser are one commit, because a commit of failing rows alone would break the gates. Each new row was seen to fail before the parser changed, as `D-16` §Implemented records. The record and `CONTRIBUTING.md` are the third.
+
+**Departures from the plan.**
+
+- **`serve -- extra` did not pass already.** The hand parser named `--`, and the row expects `extra`, the argument at fault after the end of options. The row was seen to fail before the change, and passes after it.
+- **`serve --bogus=1` now names `--bogus`.** The hand parser named the whole argument. No `D-12` row covers the form. `--sync-text=yes` keeps the whole argument in its message, as the plan's row expects.
+
+**Gates.** `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (38 unit, 21 binary) and the same suites for `x86_64-unknown-linux-musl`, all passing. `bridge.py` was not touched.
+
+**Measured.** The release musl binary grew by 12,288 bytes, 2.0%, which is just beyond the plan's ±2%, so `cargo bloat` attributes it in `D-16` §Implemented. The clean release build time did not move measurably.
+
+**Judgement calls an owner may want to revisit:**
+
+- **`lexopt`'s `Error` `Display` is linked but unreachable**, through `?` on `Parser::next`, about 0.6 KiB. Mapping that error to a message of our own would drop it, at the cost of a message for a state the parser cannot reach. Left as `?`, with a comment saying why it cannot fail.
+
+**Waiting:** stage 2, by an `implementer` session.

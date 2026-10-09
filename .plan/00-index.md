@@ -596,7 +596,7 @@ The whole binary suite passes under `sh -c "trap '' HUP INT; exec cargo test …
 
 #### D-16 — The command line is read as OS strings by `lexopt`, and `D-12`'s contract stands
 
-2026-10-09 · Accepted · Addresses `F-35` · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 1
+2026-10-09 · Accepted · Implemented 2026-10-09 · Addresses `F-35` · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 1
 
 The owner asked for the hand-written parser in `cli::parse` to be replaced by `lexopt`, and for `D-12`'s contract to be kept. `lexopt` has no dependencies of its own. It reads arguments as `OsString`s, and it brings the getopt grammar: a value attached with `=`, `--` as the end of options, and clusters of short options. The hand parser reads `env::args()`, and that panics on an argument that is not UTF-8 (`F-35`): the binary exits 101 with a panic message, where `D-12` promises exit 1 and one line.
 
@@ -621,6 +621,27 @@ Required properties:
   - the release musl binary's size;
   - the clean release build time;
   - `cargo tree -e normal`.
+
+##### D-16 §Implemented
+
+2026-10-09 · Branch `host/initial-refactoring`.
+
+- **The parser.** `main` passes `env::args_os().skip(1)` to `cli::parse`, which takes any iterator of OS strings. The subcommand is the first argument as given, compared as UTF-8, so `-- serve` prints the usage line and `sync-text --` is refused as `sync-text` with an argument. Only `serve`'s options go through `lexopt::Parser`.
+- **Messages.** `D-12`'s three are unchanged. A short option, an unknown long option and an operand are each `unknown argument: <argument>`, decoded lossily. A value attached to `--sync-text` is `unknown argument: --sync-text=<value>`. A value attached to an unknown long option is not echoed: `serve --bogus=1` names `--bogus`, where the hand parser named `--bogus=1`. A short-option cluster is refused at its first letter. `parser.next()` fails only on an attached value left unread, and every arm reads it or refuses, so no `lexopt` error reaches stderr.
+- **The binary tables** (`crates/host/tests/binary/cli.rs`). `Scratch::run` takes OS-string arguments. `D-12`'s rows are unchanged in content, written as `OsStr`s.
+  - `should_print_usage_and_exit_1_for_an_unpublished_invocation` gains `\xff` and `sync-text --`. Before the change, the `\xff` row exited 101 with a panic; `sync-text --` already printed the usage line.
+  - `should_exit_1_naming_the_argument_at_fault_for_malformed_serve_arguments` gains `serve \xff`, `serve --allow-uid \xff`, `serve -x`, `serve --sync-text=yes` and `serve -- extra`. Before the change, both non-UTF-8 rows exited 101 with a panic. `-x` and `--sync-text=yes` passed already. `serve -- extra` exited 1 naming `--`, not `extra`, so that row failed first rather than passing already as the plan expected.
+- **The unit table** (`crates/host/src/cli/tests.rs`). `should_accept_the_getopt_spellings_of_the_published_invocations` pins the parsed command for `serve`, `serve --`, `--allow-uid=1001`, a repeated `--sync-text`, repeated `--allow-uid` in both spellings, both option orders, and `sync-text`. Before the change it failed at `serve --`, and the hand parser refused `--allow-uid=1001` with `unknown argument: --allow-uid=1001`.
+- **Measured** (`CONTRIBUTING.md` §15), each from a clean export of the commit, `rustc 1.98.1`, 12 CPUs:
+
+  | | Before, the change that mints `D-16`–`D-19` | After |
+  | --- | --- | --- |
+  | Release musl binary | 611,072 bytes | 623,360 bytes (+12,288, +2.0%) |
+  | `.text` | 459,406 bytes | 467,598 bytes (+8,192) |
+  | Clean release build | 4.32–4.41 s, three runs | 4.39–4.42 s, three warm runs; a first run after `cargo fetch` took 6.48 s |
+  | `cargo tree -e normal` | `libc`, `serde_json` (with `itoa`, `memchr`, `serde_core`, `zmij`) | the same, and `lexopt` 0.3.2 with no dependencies |
+
+  `cargo bloat` attributes the `.text` delta of about 7.8 KiB by function. `lexopt`'s own code is 3.1 KiB, chiefly `Parser::next` at 1.9 KiB and `Error`'s `Display` at 0.6 KiB, the latter linked through `?` and never reached. The parser inlined into `main` adds 1.3 KiB. About 2.4 KiB of `Debug` formatting comes in with `lexopt`, for the state named in its internal `panic!`. `env::Args` and its drop glue go, about 0.5 KiB. The file grows by three pages. `cargo tree --duplicates` prints nothing.
 
 #### D-17 — `serve`'s default socket is in the user's data directory, wherever the binary is
 
@@ -1049,7 +1070,7 @@ Required property: each parameter's type states what the function does with the 
 
 #### F-35 — An argument that is not UTF-8 makes the binary panic
 
-2026-10-09 · Tier A · Found by the architect while planning `D-16` · Ruled 2026-10-09 by `D-16` · Remediation in [`plan.md`](packaging/plan.md) §Stage 1
+2026-10-09 · Tier A · Found by the architect while planning `D-16` · Ruled 2026-10-09 by `D-16` · Settled 2026-10-09 in `D-16` §Implemented: arguments are read as OS strings, and the non-UTF-8 rows of `D-12`'s tables exit 1 · Remediation in [`plan.md`](packaging/plan.md) §Stage 1
 
 `main` collects `env::args()`, which panics on an argument that is not valid Unicode. On branch `host/initial-refactoring` as read on 2026-10-09, with `D-15` implemented, the debug binary was run as `claude-clipboard-host serve $'\xff'` and as `claude-clipboard-host $'\xff'`. Each printed ``called `Result::unwrap()` on an `Err` value: "\xFF"`` from `std/src/env.rs` and exited 101. `D-12` promises exit status 1 and one line, for the usage refusal and for a malformed `serve` alike.
 

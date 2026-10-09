@@ -2,7 +2,7 @@
 
 Replace the hand-written command-line parser with `lexopt`, keeping `D-12`'s contract, then build installable x86_64 `.deb` and `.rpm` packages with GitHub Actions. The packages carry the container shim and declare their runtime dependencies, and they need no development tools and no Python on the host. An install-and-remove check, and the Docker builder that has never yet run, are validated on every push.
 
-**Status:** planned on 2026-10-09. Next is stage 1 of the plan. Round `host-initial-refactoring-r3` waits until both stages are implemented, and then reviews the complete project.
+**Status:** planned on 2026-10-09. Stage 1 is implemented, and stage 2 of the plan is next. Round `host-initial-refactoring-r3` waits until both stages are implemented, and then reviews the complete project.
 
 ## Reading order
 

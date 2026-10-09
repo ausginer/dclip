@@ -51,7 +51,7 @@ Part II is senior to Part I wherever the two meet.
 
 - **Rust 2024**, and the formatter is the repository's [`.rustfmt.toml`](.rustfmt.toml). `cargo fmt` decides formatting; nothing else does.
 - **The host is a static musl binary**, so it runs on Fedora whatever glibc it has. A dependency that needs a C toolchain or links glibc breaks that property, and taking one is an architectural decision rather than a dependency choice.
-- **Prefer `std` wherever `std` covers the use case.** A dependency is a supply-chain surface, a compile-time cost and a semver obligation, and most small crates buy none of that back. `libc` (sockets, signals, process groups) and `serde_json` (the protocol's JSON lines) are the two the host carries.
+- **Prefer `std` wherever `std` covers the use case.** A dependency is a supply-chain surface, a compile-time cost and a semver obligation, and most small crates buy none of that back. `libc` (sockets, signals, process groups), `serde_json` (the protocol's JSON lines) and `lexopt` (the command line, read as OS strings) are the three the host carries.
 - **A dependency is added with `cargo add`**, from the crate that needs it, so the version is resolved rather than guessed.
 - **`bridge.py` uses the Python standard library only.** It runs with whatever Python 3 the container already has, from a read-only mount, with nothing installed beside it.
 - **Shell scripts are bash with `set -euo pipefail`**, and are re-runnable: a devcontainer reruns its lifecycle hooks against state a previous run left behind.
@@ -363,6 +363,12 @@ The target is not the smallest code we can write. The target is the **smallest r
 # Change record
 
 What this document used to say, and what changed it.
+
+### 2026-10-09 — §Language and platform names `lexopt`
+
+Changed by `D-16`, when the command line moved to `lexopt`. The rule ended:
+
+> `libc` (sockets, signals, process groups) and `serde_json` (the protocol's JSON lines) are the two the host carries.
 
 ### 2026-10-06 — §Tests gains the binary-level layer
 
