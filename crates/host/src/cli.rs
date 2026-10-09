@@ -27,9 +27,12 @@ pub(crate) fn parse(args: &[String]) -> Result<Command> {
             while let Some(option) = options.next() {
                 match option.as_str() {
                     "--sync-text" => parsed.sync_text = true,
-                    "--allow-uid" => parsed
-                        .allow_uids
-                        .push(options.next().ok_or("missing UID")?.parse()?),
+                    "--allow-uid" => {
+                        let uid = options.next().ok_or("missing UID")?;
+                        parsed
+                            .allow_uids
+                            .push(uid.parse().map_err(|_| format!("not a UID: {uid}"))?);
+                    }
                     _ => return Err(format!("unknown argument: {option}").into()),
                 }
             }
