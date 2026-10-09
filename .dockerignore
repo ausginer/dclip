@@ -1,7 +1,9 @@
-# The image build reads the workspace manifests and the host crate, nothing else.
+# Exactly what the Dockerfile's stages read.
 *
 !Cargo.toml
 !Cargo.lock
+!.rustfmt.toml
+!clippy.toml
 !crates/host/Cargo.toml
 !crates/host/src
 !crates/host/tests

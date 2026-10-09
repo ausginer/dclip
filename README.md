@@ -34,7 +34,7 @@ else with the tools; nothing Rust-related is needed on Fedora.
 With a Docker CLI that can reach a Docker daemon:
 
 ```bash
-docker build -f crates/host/Dockerfile --output type=local,dest=dist .
+docker build --target binary --output type=local,dest=dist .
 ```
 
 The Rust toolchain and the musl target are installed inside the build image. The
