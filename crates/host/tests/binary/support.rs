@@ -7,6 +7,7 @@
 
 use serde_json::Value;
 use std::{
+    ffi::OsStr,
     fs,
     io::{self, BufRead, BufReader, Read, Write},
     os::unix::{fs::PermissionsExt, net::UnixStream},
@@ -95,7 +96,7 @@ esac"#,
     /// keeps a disposition it inherited as ignored, so without this a runner
     /// under `nohup` would fail a correct bridge. A POSIX shell cannot restore
     /// an inherited ignore; `env` can from coreutils 8.31 on.
-    fn command(&self, ignored: Option<&str>, args: &[&str]) -> Command {
+    fn command(&self, ignored: Option<&str>, args: &[impl AsRef<OsStr>]) -> Command {
         let restored = ["TERM", "INT", "HUP"]
             .into_iter()
             .filter(|signal| Some(*signal) != ignored)
@@ -122,8 +123,9 @@ esac"#,
 
     /// Runs the binary to completion. One that is still running after
     /// [`PATIENCE`] — a `serve` that should have refused, say — is killed and
-    /// fails the test rather than hanging it.
-    pub fn run(&self, args: &[&str]) -> Output {
+    /// fails the test rather than hanging it. An argument is an OS string, so
+    /// a row can carry bytes that are not UTF-8.
+    pub fn run(&self, args: &[impl AsRef<OsStr>]) -> Output {
         let child = self
             .command(None, args)
             .stdin(Stdio::null())
@@ -134,7 +136,11 @@ esac"#,
         let mut running = Running(child);
         let deadline = Instant::now() + PATIENCE;
         while running.0.try_wait().unwrap().is_none() {
-            assert!(Instant::now() < deadline, "{args:?} did not exit");
+            assert!(
+                Instant::now() < deadline,
+                "{:?} did not exit",
+                args.iter().map(AsRef::as_ref).collect::<Vec<_>>()
+            );
             thread::sleep(Duration::from_millis(10));
         }
         let mut output = Output {
