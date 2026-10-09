@@ -183,3 +183,53 @@ The Python suite passes and is untouched.
 
 - [`plan.md`](plan.md) §Phase 5, for an implementer.
 - Then a second review round, the owner's Fedora check, the Docker build, and `Q-1`.
+
+## 2026-10-09 — Phase 5: remediation of round `host-initial-refactoring-r1` (implementer)
+
+**Session.** Implementer role on branch `host/initial-refactoring`. `Effort guard active` was present at start. `Q-1` stayed out of scope, as asked. One commit per step, plus one for a test flake found at the exit gates (below).
+
+| Step | Test first, and what it showed before the change | Change |
+| ---- | ------------------------------------------------ | ------ |
+| 5.1 `F-15` | In a scratch copy, with the `is_socket()` limb removed, `should_refuse_and_keep_a_regular_file_at_the_socket_path` hung until `timeout` killed it at 40 s. With the new support, the same mutation fails in 10 s with `["serve"] did not exit`. Nothing committed for this. | `Scratch::run` kills the binary and fails after `PATIENCE`. `Scratch::serve` reads the banner on a thread, with the same bound. Both go through one kill-on-drop guard. |
+| 5.2 `D-11` (`F-21`) | None possible, as planned. | `SA_RESTART` and the `Interrupted` arm on `accept` removed. `sys::wake_on_termination` says who retries what. |
+| 5.3 `D-11` (`F-10`) | `serve` started under `trap '' HUP` stopped on SIGHUP: `serve stopped on an ignored SIGHUP`. | Each handler is installed only where the inherited action is not `SIG_IGN`. |
+| 5.4 `D-11` (`F-11`, `F-22`) | With one idle accepted connection, the socket was still there 1 s after SIGTERM. A first ordering of the same test showed the idle peer answered only after the full 12 s, with `timed out`. | `Bridge` moves into the scope and drops before the join, the lock drops after it, and the request phase waits on the wake pipe as well. `Deadline`'s comment gives the adjudicated premise. README step 2 and §Tests and limitations updated. |
+| 5.5 `F-14`, `F-12` | Passes against the code, as planned. In a scratch copy it fails under `F-12`'s mutation, with `admit` replaced by an unconditional slot: the seventeenth connection got `timed out` after 12 s instead of the refusal. It also fails with the refusal arm turned into `return Ok(())`. | No production change. README §Tests and limitations and `test-architecture.md` §The layers now state the UID check and the connection deadlines as proved at the function level. The latter has a change-record entry. |
+| 5.6 `D-4` (`F-13`) | `F-13`'s shape under a 200 ms deadline took 3.00 s. | Stdin is written non-blocking in the capture's `poll` loop, and the writer thread is gone. `sys::Poll::optional` lets one array watch a changing subset, and `Deadline` uses it too. |
+| 5.7 `D-8` (`F-17`) | None; a comment. | The `clipboard::watch` doc comment covers both endings. |
+| 5.8 `D-12` (`F-18`, `F-24`) | `--allow-uid alice` printed `invalid digit found in string`. | `not a UID: alice`. `handle-stdio` is a row of the usage table, and its separate test is deleted. |
+| 5.9 `F-20`, `F-23` | None; a precondition and a bound. | The refusal site states why a blocking stream cannot block there. The `Result` alias drops `Send + Sync`, and the crate builds without them. `F-22` was done in 5.4, as the plan's note expects. |
+
+**Waived, not tested** (`F-14` §Ruling): a failure to read peer credentials, a refused UID, a failure to make the stream non-blocking, and a failure to start a worker thread. `F-12`'s second mutation, raising `PHASE` to 3600 s, still survives the suite. That is the reason the coverage text now says the deadlines are proved at the function level.
+
+**Beyond the plan's list, one test each:**
+
+- `should_turn_away_a_request_still_arriving_at_shutdown` and `should_read_a_request_that_arrived_before_shutdown` pin `Deadline::or_until_shutdown` at the function level.
+- `should_feed_input_larger_than_a_pipe_while_reading_the_output` pins the interleaving that the writer thread used to provide for free.
+
+**A flake, found and fixed in the test.** The new concurrency test failed in 3 of 8 parallel runs, with `ConnectionReset` while reading the response in its retry loop. Its cause is pre-existing server behaviour, which is noted below. The loop now counts a failed exchange as one more attempt. Afterwards, 15 of 15 runs passed.
+
+**Gates.**
+
+- `cargo fmt` and clippy with `-D warnings` are clean.
+- `cargo test --workspace` and `cargo test --locked --target x86_64-unknown-linux-musl` each pass: 37 unit and 19 binary tests.
+- The Python suite passes and is untouched.
+- `rg -n unsafe crates/host/src` finds nothing outside `sys.rs`.
+- The normal dependency edges are still `libc` and `serde_json`.
+
+**Measured.**
+
+- **Binary.** The release musl binary is 611,072 bytes. That is −8,192 bytes (−1.3%) against 619,264, which is also this phase's starting figure, rebuilt from a scratch checkout. `cargo bloat` was installed into the devcontainer's `~/.cargo/bin` for this measurement, and the text section moved from 463,086 to 459,406 bytes (−3,680). The removed writer thread accounts for about 2.8 KiB: its spawn hooks, `Thread::new`, its result packet and its closure. `capture` itself is 2.2 KiB smaller. The accept loop's scope closure grew by about 1.7 KiB. The file size moves in pages, so it shows the text section's delta as two pages.
+- **Tests.** 56, up from 50 at phase 4 and 13 at the baseline.
+
+**Noticed, not acted on.** None of these is in this phase's scope.
+
+- **A refusal can be lost to a reset.** `serve` writes a refusal and closes the stream without reading the request. If the peer has already sent the request, Linux resets the connection, and the peer's read can fail with `ConnectionReset` before the refusal is read. The shim sends its request before reading, so a refused UID, whose message carries the `--allow-uid` remedy, may reach the container as a reset instead. Observed only through the concurrency test, under parallel load. The initial implementation on `main` refuses the same way, so this predates the branch.
+- **The termination-signal binary tests assume handled signals.** Since `D-11`, `should_remove_the_socket_and_exit_0_on_a_termination_signal` fails if the test runner itself was started with SIGHUP or SIGINT ignored, for example under `nohup cargo test`, because `serve` inherits that disposition and now keeps it.
+- **One commit lacks the attribution trailers.** The step 5.1 commit was made without the trailers the branch's other commits carry. It was left as made rather than rewritten.
+
+**Waiting:**
+
+- A fresh `consolidator` for a second round, scoped to this phase.
+- The owner's Fedora check and the Docker build. The Docker CLI is still absent here.
+- `Q-1`.

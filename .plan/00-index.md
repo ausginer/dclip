@@ -163,6 +163,11 @@ Required properties:
 - A unit test with `F-13`'s shape: the tool exits non-zero while a member of its group holds stdin open and does not read it. The capture returns its failure within a millisecond deadline.
 - The existing timeout, reaping and stdin tests still pass.
 
+##### D-4 §Remediated
+
+2026-10-09 · Branch `host/initial-refactoring`. What §Adjudicated owed.
+
+`process::capture` makes the tool's stdin non-blocking and writes it from its own `poll` loop, which watches stdin for writability beside stdout and the pidfd, through `sys::Poll::optional`. The pipe closes once the input is written, once the tool stops taking it, or when `capture` returns, so there is no writer thread and nothing to join. A failed write is reported only if the tool exits successfully, as before. Tests: `should_fail_within_the_deadline_while_a_group_member_holds_unread_input`, which took 3.0 s against its 200 ms deadline before the change; `should_feed_input_larger_than_a_pipe_while_reading_the_output`; and the existing timeout, reaping and stdin tests, unchanged.
 
 #### D-5 — The clipboard's type listing is parsed as bytes
 
@@ -277,6 +282,9 @@ Required properties:
 
 **Owed:** the doc comment on `clipboard::watch` states both cases. It currently states only the second, and states it without condition.
 
+##### D-8 §Remediated
+
+2026-10-09 · Branch `host/initial-refactoring`. The doc comment on `clipboard::watch` states both cases §Adjudicated lists: a graceful shutdown kills the watcher's group and every sync in it, and parent death kills the watcher alone. No code changed.
 
 #### D-9 — The `handle-stdio` subcommand is deleted
 
@@ -325,7 +333,7 @@ Required properties:
 
 #### D-11 — The server keeps inherited ignored signals, stops advertising its socket once shutdown is requested, and drains only work in progress
 
-2026-10-08 · Accepted · Supersedes `D-7` · Addresses `F-6`, `F-10`, `F-11`, `F-21` · Alternatives in [`decisions.md`](host/initial-refactoring/decisions.md)
+2026-10-08 · Accepted · Implemented 2026-10-09 · Supersedes `D-7` · Addresses `F-6`, `F-10`, `F-11`, `F-21` · Alternatives in [`decisions.md`](host/initial-refactoring/decisions.md)
 
 `D-7`'s mechanism stands:
 
@@ -370,10 +378,25 @@ Required properties:
   - With an idle connection open, after SIGTERM the socket path is gone. The idle peer receives `bridge is shutting down`, and `serve` exits 0 well inside one request phase.
   - `should_reap_an_in_flight_requests_tool_before_exiting_on_a_signal` still passes.
   - The concurrency test that `F-14` §Ruling requires.
+##### D-11 §Implemented
+
+2026-10-09 · Branch `host/initial-refactoring`.
+
+- **Dispositions.** `sys::wake_on_termination` reads each signal's current action and installs the wake handler only where it is not `SIG_IGN`. The handlers are installed without `SA_RESTART`.
+- **Stopping advertising.** `server::Bridge` holds the watcher and the `Socket` only, in that drop order. It is moved into the `thread::scope` closure, so it drops as the accept loop ends, before the scope joins any worker. The lock is a separate local, dropped explicitly after the scope returns.
+- **The request phase at shutdown.** `server::work` reads the request through `Deadline::or_until_shutdown`, which also waits on the wake pipe and ends a wait with `bridge is shutting down`. Bytes already sent are still read. The response phase has no stop.
+- **Retries.** `accept` retries `WouldBlock` and `ConnectionAborted`, and nothing else. Every `poll` caller retries `Interrupted`.
+
+Tests:
+
+- binary `should_keep_a_signal_ignored_when_serve_inherits_it_ignored`, `should_unadvertise_at_once_and_turn_away_an_idle_peer_on_a_signal`, `should_refuse_a_connection_over_the_limit_and_keep_serving`, `should_reap_an_in_flight_requests_tool_before_exiting_on_a_signal` and `should_remove_the_socket_and_exit_0_on_a_termination_signal`;
+- unit `should_turn_away_a_request_still_arriving_at_shutdown` and `should_read_a_request_that_arrived_before_shutdown`.
+
+The arms `F-14` §Ruling waived have no test: a failure to read peer credentials, a refused UID, a failure to make the stream non-blocking, and a failure to start a worker thread.
 
 #### D-12 — Only the published invocations run, and a refused invocation is told what was wrong
 
-2026-10-08 · Accepted · Supersedes `D-9` · Addresses `F-8`, `F-18`, `F-24` · Alternatives in [`decisions.md`](host/initial-refactoring/decisions.md)
+2026-10-08 · Accepted · Implemented 2026-10-09 · Supersedes `D-9` · Addresses `F-8`, `F-18`, `F-24` · Alternatives in [`decisions.md`](host/initial-refactoring/decisions.md)
 
 `D-9` deleted `handle-stdio`, and that stands. Its second property, "any other invocation prints the usage line", contradicted `D-3`'s unchanged error text for a `serve` whose options are malformed. The implementation followed `D-3`, and `D-3` gives the better outcome (`CONTRIBUTING.md` §12). A user who chose the right subcommand and got one argument wrong is better served by a line naming that argument than by the usage line. One of those messages names nothing, though: `serve --allow-uid alice` prints `invalid digit found in string`, which is `std`'s parse error. The rule below makes it name the problem.
 
@@ -391,6 +414,11 @@ Required properties:
   - One binary table test of usage refusals, with `handle-stdio` among its rows and no setup that its assertion does not use.
   - One binary table test of malformed `serve` arguments, asserting exit status 1 and each message.
   - Both end on every outcome, including one where `serve` starts (`F-15`).
+##### D-12 §Implemented
+
+2026-10-09 · Branch `host/initial-refactoring`.
+
+`cli::parse` reports an `--allow-uid` value that does not parse as `not a UID: <value>`. Tests: binary `should_print_usage_and_exit_1_for_an_unpublished_invocation`, whose table has a `handle-stdio` row, and `should_exit_1_naming_the_argument_at_fault_for_malformed_serve_arguments`, which asserts each message exactly. Both run the binary through `Scratch::run`, which kills it and fails the test if it has not exited within 10 s.
 
 #### D-13 — A commit identifier found in a tracked file is replaced where it stands, and the record does not carry it
 
@@ -526,7 +554,7 @@ Required property: each of the above has a test in the layer that can reach it.
 
 #### F-10 — A bridge started with SIGHUP ignored now exits when its terminal closes
 
-2026-10-07 · Tier A · Open · Routed to the architect (`D-7`) · Ruled 2026-10-08 by `D-11`; open until implemented · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`integrity-1`)
+2026-10-07 · Tier A · Routed to the architect (`D-7`) · Ruled 2026-10-08 by `D-11` · Settled 2026-10-09 by `D-11` §Implemented · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`integrity-1`)
 
 `sys::wake_on_termination` installs a SIGHUP handler unconditionally and never reads the old action. A disposition inherited as ignored, as under `nohup`, was kept by the initial implementation and is now replaced, so a bridge that used to outlive its terminal shuts down with it.
 
@@ -534,7 +562,7 @@ Required property: a signal the bridge inherited as ignored stays ignored, or th
 
 #### F-11 — After a termination signal the socket stays bound and new connections queue unserved
 
-2026-10-07 · Tier A · Open · Routed to the architect (`D-7`) · Ruled 2026-10-08 by `D-11`; open until implemented · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`integrity-2`)
+2026-10-07 · Tier A · Routed to the architect (`D-7`) · Ruled 2026-10-08 by `D-11` · Settled 2026-10-09 by `D-11` §Implemented · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`integrity-2`)
 
 On the wake byte, `serve` joins every worker inside `thread::scope`, and only after that drops `Bridge`, which removes the path and closes the listener. While the workers are joined, the kernel queues new connections that nothing will accept. With one idle connection open, the process exited 11.9 s after SIGTERM, and a client that connected meanwhile got no reply and then a reset.
 
@@ -542,7 +570,7 @@ Required property: once shutdown is requested, a new connection is refused promp
 
 #### F-12 — Running-server coverage is claimed for wiring that no test pins
 
-2026-10-07 · Tier B · Open · Routed to the implementer · Scheduled in [`plan.md`](host/initial-refactoring/plan.md) §Phase 5 · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`integrity-3`)
+2026-10-07 · Tier B · Routed to the implementer · Settled 2026-10-09 in [`plan.md`](host/initial-refactoring/plan.md) §Phase 5, step 5.5: the concurrency limit is pinned through the running server, and `README.md` and `test-architecture.md` state the peer UID check and the connection deadlines as proved at the function level · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`integrity-3`)
 
 `README.md` §Tests and limitations and `test-architecture.md` §The layers claim that tests cover the running server's peer-UID check, its concurrency limit and its per-connection deadline. Two mutations survived the full suite: replacing the `admit` call in `serve` with an unconditional slot, and raising `PHASE` to 3600 s.
 
@@ -550,7 +578,7 @@ Required property: every coverage claim can be falsified by mutating the site it
 
 #### F-13 — A failed capture with input can outlive its deadline
 
-2026-10-07 · Tier C · Open · Routed to the architect (`D-4`) · Ruled 2026-10-08 in `D-4` §Adjudicated, a defect against `D-4`; open until implemented · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`reviewer-1`)
+2026-10-07 · Tier C · Routed to the architect (`D-4`) · Ruled 2026-10-08 in `D-4` §Adjudicated, a defect against `D-4` · Settled 2026-10-09 by `D-4` §Remediated · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`reviewer-1`)
 
 When a tool exits non-zero while another member of its group holds stdin open, `capture` joins the stdin writer after dropping a reaped `Tool`. That drop signals nothing, so the join waits for the group member to exit. A probe took 3.01 s against a 200 ms deadline; the initial implementation returned in 2.45 ms. `D-4`'s "one deadline bounds the whole capture" and "a reaped child is never signalled" conflict on this path. No production trigger is known, because `xsel -i` reads all of its input before it forks.
 
@@ -558,7 +586,7 @@ Required property: a capture's total duration, the stdin join included, is bound
 
 #### F-14 — `F-6`'s per-connection limb has no test that drives the accept loop
 
-2026-10-07 · Tier C · Open · Routed to the owner or the architect · Ruled 2026-10-08 (§Ruling below); open until implemented · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`reviewer-2`)
+2026-10-07 · Tier C · Routed to the owner or the architect · Ruled 2026-10-08 (§Ruling below) · Settled 2026-10-09 by `should_refuse_a_connection_over_the_limit_and_keep_serving`, with the waived arms named in `D-11` §Implemented · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`reviewer-2`)
 
 Plan step 3.5 requires a test showing that a per-connection failure leaves the loop running, and none exists. `admit`'s tests pin refusal messages and slot counting, which were not the defect. The journal acknowledges the gap.
 
@@ -587,7 +615,7 @@ Their handling is structural, and every arm but the last shares the arm the test
 
 #### F-15 — Three binary tests start `serve` with no path that ends it
 
-2026-10-07 · Tier C · Open · Routed to the implementer · Scheduled in [`plan.md`](host/initial-refactoring/plan.md) §Phase 5 · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`reviewer-3`)
+2026-10-07 · Tier C · Routed to the implementer · Settled 2026-10-09 in [`plan.md`](host/initial-refactoring/plan.md) §Phase 5, step 5.1: `Scratch::run` and `Scratch::serve` in `crates/host/tests/binary/support.rs` kill the binary and fail the test on every outcome · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`reviewer-3`)
 
 `Scratch::run` waits for the binary to exit, and three tests use it to start `serve`, expecting it to refuse. A regression that lets `serve` start makes `cargo test` and the image build hang rather than fail, which breaks `D-2`'s termination property.
 
@@ -603,7 +631,7 @@ Required property: the record describes the header's wire form as the host emits
 
 #### F-17 — A graceful shutdown kills an in-flight text sync
 
-2026-10-07 · Tier C · Open · Routed to the architect (`D-8`) · Ruled 2026-10-08 in `D-8` §Adjudicated; open until the comment is corrected · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`reviewer-5`)
+2026-10-07 · Tier C · Routed to the architect (`D-8`) · Ruled 2026-10-08 in `D-8` §Adjudicated · Settled 2026-10-09 by `D-8` §Remediated · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`reviewer-5`)
 
 On SIGTERM, SIGINT or SIGHUP, the `Bridge` drop kills the watcher's process group, and every running `sync-text` is in that group. A probe confirmed this. `D-8` and the `clipboard::watch` doc comment say a running sync runs to completion. That holds only on parent death. The behaviour is unchanged from the initial implementation.
 
@@ -611,7 +639,7 @@ Required property: the record and the comment state truthfully what happens to a
 
 #### F-18 — Malformed `serve` options do not print `D-9`'s usage line
 
-2026-10-07 · Tier C · Open · Routed to the architect (`D-9`, `D-3`) · Ruled 2026-10-08 by `D-12`; open until implemented · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`reviewer-6`)
+2026-10-07 · Tier C · Routed to the architect (`D-9`, `D-3`) · Ruled 2026-10-08 by `D-12` · Settled 2026-10-09 by `D-12` §Implemented · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`reviewer-6`)
 
 `serve --bogus`, `serve --allow-uid alice` and `serve --allow-uid` exit 1 with a specific message, unchanged from the initial implementation as `D-3` requires. `D-9` says "any other invocation prints the usage line".
 
@@ -627,7 +655,7 @@ Required property: the record names the affected states in §10's vocabulary, no
 
 #### F-20 — `serve` can pass `Deadline` a blocking stream
 
-2026-10-07 · Tier C · Open · Routed to the implementer · Scheduled in [`plan.md`](host/initial-refactoring/plan.md) §Phase 5 · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`integrity-6`)
+2026-10-07 · Tier C · Routed to the implementer · Settled 2026-10-09 in [`plan.md`](host/initial-refactoring/plan.md) §Phase 5, step 5.9: the refusal site in `server::serve` states the assumption it relies on · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`integrity-6`)
 
 If `set_nonblocking` fails on an accepted stream, `serve` still writes the refusal through `Deadline::new`, whose documented precondition is a non-blocking stream.
 
@@ -635,7 +663,7 @@ Required property: any path that hands `Deadline` a stream meets its preconditio
 
 #### F-21 — `SA_RESTART` and the `accept` loop's `Interrupted` retry guard against a failure that cannot occur
 
-2026-10-07 · Tier C · Open · Routed to the architect (`D-7`, `F-6`) · Ruled 2026-10-08 by `D-11`; open until implemented · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`der-1`)
+2026-10-07 · Tier C · Routed to the architect (`D-7`, `F-6`) · Ruled 2026-10-08 by `D-11` · Settled 2026-10-09 by `D-11` §Implemented · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`der-1`)
 
 The listener has always been non-blocking, and a non-blocking `accept` never sleeps, so a signal cannot interrupt it with `EINTR`. A probe saw 0 `EINTR` in 200,000 non-blocking `accept` calls across 7.4 million handler runs; the blocking control returned `EINTR` on all 2,000 calls. `F-6`'s third bullet, `D-7`'s `EINTR` clause, `SA_RESTART` and its comment all rest on the opposite premise.
 
@@ -643,7 +671,7 @@ Required property: every mechanism in the signal and accept path, and the commen
 
 #### F-22 — `Deadline`'s doc comment restates a withdrawn premise
 
-2026-10-07 · Tier C · Open · Routed to the implementer · Scheduled in [`plan.md`](host/initial-refactoring/plan.md) §Phase 5 · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`der-2`)
+2026-10-07 · Tier C · Routed to the implementer · Settled 2026-10-09 in [`plan.md`](host/initial-refactoring/plan.md) §Phase 5, step 5.4: the doc comment on `server::Deadline` gives the adjudicated premise · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`der-2`)
 
 The comment begins "A socket timeout bounds a single call", the premise `D-6` §Adjudicated withdrew.
 
@@ -651,7 +679,7 @@ Required property: the stated reason for `Deadline` matches the adjudicated prem
 
 #### F-23 — The error alias carries `Send + Sync` that no caller needs
 
-2026-10-07 · Tier C · Open · Routed to the implementer · Scheduled in [`plan.md`](host/initial-refactoring/plan.md) §Phase 5 · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`cleanup-1`)
+2026-10-07 · Tier C · Routed to the implementer · Settled 2026-10-09 in [`plan.md`](host/initial-refactoring/plan.md) §Phase 5, step 5.9: the alias in `main.rs` has no `Send + Sync` · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`cleanup-1`)
 
 No error typed with `crate::Result` crosses a thread, and the crate builds with the bounds removed.
 
@@ -659,7 +687,7 @@ Required property: the error type's bounds are no wider than some caller needs.
 
 #### F-24 — The `handle-stdio` refusal test repeats the usage-refusal test
 
-2026-10-07 · Tier C · Open · Routed to the architect (`D-9`) · Ruled 2026-10-08 by `D-12`; open until implemented · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`cleanup-2`)
+2026-10-07 · Tier C · Routed to the architect (`D-9`) · Ruled 2026-10-08 by `D-12` · Settled 2026-10-09 by `D-12` §Implemented · Review [`host-initial-refactoring-r1`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) (`cleanup-2`)
 
 `should_refuse_handle_stdio_as_an_unpublished_invocation` asserts the same behaviour as `should_print_usage_and_exit_1_for_an_unpublished_invocation`, and its clipboard stand-in plays no part in its assertion. `D-9` §Implemented and plan step 7 name it as `D-9`'s witness, so whether it should stay is a question about `D-9`.
 
