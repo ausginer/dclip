@@ -71,3 +71,18 @@ RUN DCLIP_VERSION=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml) \
 
 FROM scratch AS packages
 COPY --from=package /out/ /
+
+# The install-and-remove check of the .rpm, with the packaged layout run end
+# to end, on the current Fedora release.
+FROM fedora:44@sha256:43b29f65a41eb9c35e1cd5323e3bdf3b655c2357a9f4f1ff2f9c2798e5045d80 AS check-rpm
+COPY Cargo.toml bridge.py LICENSE NOTICE README.md /check/repo/
+COPY packaging/check-lib.sh packaging/check-rpm.sh /check/
+COPY --from=package /out/ /check/packages/
+RUN bash /check/check-rpm.sh /check/packages /check/repo
+
+# The install-and-remove check of the .deb, on the current Debian stable.
+FROM debian:13.7@sha256:913f6706df59a68922d1dd08f78c2476560a8d367897200a6005b00e5f67c2d5 AS check-deb
+COPY Cargo.toml bridge.py LICENSE NOTICE README.md /check/repo/
+COPY packaging/check-lib.sh packaging/check-deb.sh /check/
+COPY --from=package /out/ /check/packages/
+RUN bash /check/check-deb.sh /check/packages /check/repo
