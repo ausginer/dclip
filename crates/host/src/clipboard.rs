@@ -53,7 +53,7 @@ pub(crate) fn x11_text() -> Result<Vec<u8>> {
 /// Makes `text` the X11 CLIPBOARD selection. `xsel` forks a daemon to own the
 /// selection, and that daemon outlives the capture by design.
 pub(crate) fn set_x11_text(text: Vec<u8>) -> Result<()> {
-    capture("xsel", &["-ib"], Some(text), Duration::from_secs(4))?;
+    capture("xsel", &["-ib"], Some(&text), Duration::from_secs(4))?;
     Ok(())
 }
 

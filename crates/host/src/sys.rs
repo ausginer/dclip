@@ -84,13 +84,20 @@ pub(crate) enum Interest {
 
 impl<'fd> Poll<'fd> {
     pub(crate) fn new(fd: BorrowedFd<'fd>, interest: Interest) -> Self {
+        Self::optional(Some(fd), interest)
+    }
+
+    /// An entry that [`poll`] skips when `fd` is `None`, so that one array
+    /// can watch a changing subset of its descriptors.
+    pub(crate) fn optional(fd: Option<BorrowedFd<'fd>>, interest: Interest) -> Self {
         let events = match interest {
             Interest::Read => libc::POLLIN,
             Interest::Write => libc::POLLOUT,
         };
         Self(
             libc::pollfd {
-                fd: fd.as_raw_fd(),
+                // `poll` ignores an entry whose descriptor is negative.
+                fd: fd.map_or(-1, |fd| fd.as_raw_fd()),
                 events,
                 revents: 0,
             },

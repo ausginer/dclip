@@ -10,7 +10,7 @@ fn should_time_out_and_reap_a_slow_tool() {
 #[test]
 fn should_preserve_nuls_and_newlines_in_tool_output() {
     assert_eq!(
-        capture("cat", &[], Some(PNG.to_vec()), Duration::from_secs(2)).unwrap(),
+        capture("cat", &[], Some(PNG), Duration::from_secs(2)).unwrap(),
         PNG
     );
 }
@@ -68,4 +68,35 @@ fn should_leave_the_group_of_a_successful_tool_alone() {
     let (outcome, alive) = capture_leaving_a_group_member("printf done");
     assert_eq!(outcome.unwrap(), b"done");
     assert!(alive, "the group of a successful tool was signalled");
+}
+
+#[test]
+fn should_fail_within_the_deadline_while_a_group_member_holds_unread_input() {
+    // More than a pipe holds, so the input is still being written when the
+    // tool exits; the background `sleep` keeps stdin open and never reads it.
+    let input = vec![0; 1024 * 1024];
+    let started = Instant::now();
+    let outcome = capture(
+        "sh",
+        &["-c", "exec 3<&0; sleep 3 <&3 >/dev/null 2>&1 & exit 1"],
+        Some(&input),
+        Duration::from_millis(200),
+    );
+    assert!(outcome.is_err());
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "{:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
+fn should_feed_input_larger_than_a_pipe_while_reading_the_output() {
+    // `cat` blocks writing its output until the capture reads it, so the input
+    // only gets through if writing and reading take turns.
+    let input = (0..4 * 1024 * 1024).map(|i| i as u8).collect::<Vec<_>>();
+    assert!(
+        capture("cat", &[], Some(&input), Duration::from_secs(2)).unwrap() == input,
+        "output differs"
+    );
 }

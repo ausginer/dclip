@@ -78,21 +78,15 @@ impl<'a> Deadline<'a> {
             if remaining.is_zero() {
                 return Err(io::ErrorKind::TimedOut.into());
             }
-            // Without a stop, the second entry is a placeholder left unwatched.
             let mut fds = [
                 Poll::new(self.stream.as_fd(), interest),
-                Poll::new(self.stop.unwrap_or(self.stream.as_fd()), Interest::Read),
+                Poll::optional(self.stop, Interest::Read),
             ];
-            let watched = if self.stop.is_some() {
-                &mut fds[..]
-            } else {
-                &mut fds[..1]
-            };
-            match sys::poll(watched, Some(remaining)) {
+            match sys::poll(&mut fds, Some(remaining)) {
                 Err(error) if error.kind() != io::ErrorKind::Interrupted => return Err(error),
                 _ => {}
             }
-            if self.stop.is_some() && fds[1].ready() {
+            if fds[1].ready() {
                 return Err(io::Error::other("bridge is shutting down"));
             }
         }
