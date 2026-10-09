@@ -50,7 +50,7 @@ Notes:
 - **A test that fails only in the builder is a finding, not a flake.** Two examples: the suite running as root in the image, and a coreutils older than `test-architecture.md` §The layers requires. Stop and report it. Do not skip the test, weaken it, or `#[ignore]` it to make the run pass.
 - **Exact versions** are the implementer's to choose at the time of the step, each a current release. That covers the images, GitHub's actions and the runner label. Name them in `D-19` §Implemented. No commit identifier appears in any tracked file. An image digest, where one is used, is written `sha256:<hex>` (`documentation.md` §10).
 - **The guard's suite needs a Node that runs TypeScript directly** (`AGENTS.md` §Evidence). Choose the image accordingly. If the suite needs something the image cannot provide, such as a Claude Code installation, stop and report it rather than dropping the gate.
-- **`Q-2` is answered: Apache-2.0** (`Q-2` §Answer). The nfpm manifest in 2.4 sets the same value as the workspace manifest, so the `.rpm`'s `License` tag is `Apache-2.0`, and the `.deb` carries the license in `/usr/share/doc/claude-clipboard/copyright`. The checks in 2.5 assert both, beside `D-18`'s contents.
+- **`Q-2` is answered: Apache-2.0** (`Q-2` §Answer). The nfpm manifest in 2.4 sets the same value as the workspace manifest, so the `.rpm`'s `License` tag is `Apache-2.0`, and the `.deb` carries the license in `/usr/share/doc/claude-clipboard/copyright`, with `NOTICE`'s line as its `Copyright:` field. The checks in 2.5 assert both, beside `D-18`'s contents.
 
 Exit:
 

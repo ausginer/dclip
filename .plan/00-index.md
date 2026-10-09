@@ -1111,8 +1111,9 @@ Once it is chosen: add the license file, set `license` in the workspace manifest
 
 - `LICENSE` at the repository root is the Apache License 2.0 text as published at `https://www.apache.org/licenses/LICENSE-2.0.txt`, unmodified. Its appendix's copyright line is left as the template gives it.
 - `[workspace.package]` sets `license = "Apache-2.0"`, and `crates/host` inherits it.
-- `README.md` §License names it.
-- Owed by stage 2 of [`plan.md`](packaging/plan.md): the packaging manifest sets the same value, so that the `.rpm`'s `License` tag is `Apache-2.0` and the `.deb` carries the license in `/usr/share/doc/claude-clipboard/copyright`. `D-18`'s "no license value" property no longer applies, because the condition it waited on is met.
+- `NOTICE` at the repository root carries the copyright line, `Copyright 2026 Vladimir Rindevich`, which the owner gave. `LICENSE` keeps the published text, appendix included, because the appendix is a template for notices and not part of the grant.
+- `README.md` §License names the holder and both files.
+- Owed by stage 2 of [`plan.md`](packaging/plan.md): the packaging manifest sets the same value, so that the `.rpm`'s `License` tag is `Apache-2.0` and the `.deb` carries the license in `/usr/share/doc/claude-clipboard/copyright`, whose `Copyright:` field is `NOTICE`'s line. `D-18`'s "no license value" property no longer applies, because the condition it waited on is met.
 
 ---
 

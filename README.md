@@ -247,4 +247,4 @@ particular CLI or terminal.
 
 ## License
 
-Apache License 2.0. See [`LICENSE`](LICENSE).
+Copyright 2026 Vladimir Rindevich. Licensed under the Apache License 2.0: see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
