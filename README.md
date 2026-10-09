@@ -78,8 +78,9 @@ it: `--sync-text` below replaces it. Then run in a Fedora terminal:
 Leave the terminal open for now; closing it, Ctrl+C or SIGTERM stops the bridge.
 It removes its socket at once and stops its text watcher, answers the requests
 it has already received, and tells a client still sending one that the bridge is
-shutting down. Started with SIGHUP ignored, as `nohup` starts it, the bridge
-keeps running when its terminal closes. `--sync-text` copies plain text into X11 with
+shutting down. Any of SIGHUP, SIGINT and SIGTERM that the bridge was started
+with ignored stays ignored, so under `nohup`, which ignores SIGHUP, it keeps
+running when its terminal closes. `--sync-text` copies plain text into X11 with
 `xsel`. It checks the current content first and skips offers that contain an
 image, including mixed offers where an image comes with a text representation.
 If you do not need this, run `serve` without `--sync-text`.

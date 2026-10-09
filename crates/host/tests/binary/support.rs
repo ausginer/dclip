@@ -159,8 +159,8 @@ esac"#,
 
     /// Starts `serve` as [`Scratch::serve`] does, but with `signal` ignored
     /// when it starts, the way `nohup` starts a program with SIGHUP ignored.
-    pub fn serve_ignoring(&self, signal: &str, args: &[&str]) -> Server {
-        self.start(self.command(Some(signal), &[&["serve"], args].concat()))
+    pub fn serve_ignoring(&self, signal: &str) -> Server {
+        self.start(self.command(Some(signal), &["serve"]))
     }
 
     fn start(&self, mut command: Command) -> Server {
