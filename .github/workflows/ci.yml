@@ -1,0 +1,43 @@
+# Every gate and both install checks are targets of the root Dockerfile, and
+# each job here is a `docker build` of one of them, which anyone with Docker
+# can run from a checkout.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  target:
+    name: ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [fmt, clippy, test, musl, python, guard, check-rpm, check-deb]
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - run: docker build --progress=plain --target ${{ matrix.target }} .
+
+  packages:
+    needs: target
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - run: docker build --progress=plain --target packages --output type=local,dest=dist .
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: dclip-packages
+          path: dist/
+          if-no-files-found: error

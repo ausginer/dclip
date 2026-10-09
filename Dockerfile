@@ -69,9 +69,6 @@ RUN DCLIP_VERSION=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml) \
     && nfpm package --config packaging/nfpm.yaml --packager deb --target /out/ \
     && nfpm package --config packaging/nfpm.yaml --packager rpm --target /out/
 
-FROM scratch AS packages
-COPY --from=package /out/ /
-
 # The install-and-remove check of the .rpm, with the packaged layout run end
 # to end, on the current Fedora release.
 FROM fedora:44@sha256:43b29f65a41eb9c35e1cd5323e3bdf3b655c2357a9f4f1ff2f9c2798e5045d80 AS check-rpm
@@ -86,3 +83,10 @@ COPY Cargo.toml bridge.py LICENSE NOTICE README.md /check/repo/
 COPY packaging/check-lib.sh packaging/check-deb.sh /check/
 COPY --from=package /out/ /check/packages/
 RUN bash /check/check-deb.sh /check/packages /check/repo
+
+# The .deb and the .rpm both checks installed, exported only once both passed:
+#
+#   docker build --target packages --output type=local,dest=dist .
+FROM scratch AS packages
+COPY --from=check-rpm /check/packages/ /
+COPY --from=check-deb /check/packages/ /
