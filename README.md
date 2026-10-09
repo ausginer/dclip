@@ -205,11 +205,13 @@ scripts take their place. They cover:
   socket;
 - the server as it runs: the command line and its exit status, the lock that
   refuses a second instance, replacing a stale socket and refusing any other
-  file at its path, the peer UID check and the concurrency limit, a deadline on
-  each connection however slowly the peer sends or reads, and a clean exit on
-  SIGTERM, SIGINT or SIGHUP that removes the socket at once, turns away a
-  client still sending its request and waits for requests already received,
-  while a signal the bridge was started with ignored stays ignored;
+  file at its path, the concurrency limit, and a clean exit on SIGTERM, SIGINT
+  or SIGHUP that removes the socket at once, turns away a client still sending
+  its request and waits for requests already received, while a signal the
+  bridge was started with ignored stays ignored;
+- the server's checks, as functions rather than through the running server:
+  the peer UID check, and a deadline on each connection however slowly the
+  peer sends or reads, proved with short deadlines in place of the 12 s ones;
 - tools: timeouts, reaping, and leaving alone the processes a tool that
   succeeded started, such as the daemon `xsel` keeps to own the selection;
 - text sync: the whole decision sequence, including skipping offers with an

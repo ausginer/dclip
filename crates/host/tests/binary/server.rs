@@ -1,4 +1,4 @@
-use crate::support::{Scratch, await_pid, read_response, running};
+use crate::support::{PATIENCE, Scratch, await_pid, read_response, running};
 use std::{
     fs,
     io::Write,
@@ -125,4 +125,39 @@ fn should_unadvertise_at_once_and_turn_away_an_idle_peer_on_a_signal() {
         "{:?}",
         signalled.elapsed()
     );
+}
+
+#[test]
+fn should_refuse_a_connection_over_the_limit_and_keep_serving() {
+    let scratch = Scratch::new();
+    scratch.clipboard(b"image/png\n", b"");
+    let server = scratch.serve(&[]);
+    // Each holds a place by sending nothing; they are accepted in order, so
+    // the seventeenth finds every place taken.
+    let idle = (0..16).map(|_| server.connect()).collect::<Vec<_>>();
+    assert_eq!(
+        read_response(server.connect()).header,
+        serde_json::json!({
+            "error": "too many concurrent clipboard requests",
+            "ok": false,
+            "size": 0
+        })
+    );
+    drop(idle);
+    // A place comes free once its worker has seen its peer go, which the
+    // test cannot observe, so it asks until a place has.
+    let deadline = Instant::now() + PATIENCE;
+    loop {
+        let response = server.request(b"{\"op\":\"types\"}\n");
+        if response.header["ok"] == true {
+            break;
+        }
+        assert_eq!(
+            response.header["error"], "too many concurrent clipboard requests",
+            "{:?}",
+            response.header
+        );
+        assert!(Instant::now() < deadline, "no place came free");
+        thread::sleep(Duration::from_millis(10));
+    }
 }

@@ -34,10 +34,12 @@ layers it touches agree.
    exit status, stderr, the socket and signals. Stand-in `wl-paste` and `xsel`
    scripts sit first on the child's `PATH`. They replace the Wayland session,
    not the bridge, so what these tests prove is the bridge's own lifecycle —
-   binding, the lock, replacement of a stale socket, cleanup on a signal,
-   deadlines, the text-sync watcher — and the protocol as the socket carries
-   it. They need only `/bin/sh` and coreutils, so they run in the default
-   `cargo test`.
+   binding, the lock, replacement of a stale socket, cleanup on a signal, the
+   concurrency limit, the text-sync watcher — and the protocol as the socket
+   carries it. They need only `/bin/sh` and coreutils, so they run in the
+   default `cargo test`. The peer UID check and the per-connection deadlines
+   are proved by the first two layers only: a refusal needs a second account,
+   and the running server's 12 s phase is too long to wait out.
 4. **Python unit tests** — `test_bridge.py`, over the shim's argument
    translation and output, with `request_host` mocked. They prove that each
    supported `wl-paste`/`xclip` invocation becomes the right request and that
@@ -211,3 +213,12 @@ Changed by `D-2` and `D-3`, when the host was split into modules. The first laye
 >    transformation.
 
 The second began "also beside the code", and the design-property paragraph read "`respond_with` takes the clipboard as a function, so the whole request-to-response policy is provable without Wayland."
+
+### 2026-10-09 — The binary layer's coverage, stated as pinned
+
+Changed by `F-12`, when a mutation of the running server's admission and of its phase length each survived the suite. The third layer's coverage sentence read:
+
+> not the bridge, so what these tests prove is the bridge's own lifecycle —
+> binding, the lock, replacement of a stale socket, cleanup on a signal,
+> deadlines, the text-sync watcher — and the protocol as the socket carries
+> it.
