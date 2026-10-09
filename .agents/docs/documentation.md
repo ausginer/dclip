@@ -193,7 +193,11 @@ A convention with no instrument is a convention that decays, and the classes abo
 | `.devcontainer/`                                  | Operation — the development container and its lifecycle scripts                                                                                                          |
 | `crates/host/`                                    | Source — the `dclip` binary that runs on the host                                                                                                                         |
 | `bridge.py`, `test_bridge.py`                     | Source — the container-side `wl-paste`/`xclip` shim and its tests                                                                                                         |
-| `setup-host.sh`                                   | Source — the host installer                                                                                                                                               |
+| `setup-host.sh`                                   | Source — the host installer from a checkout                                                                                                                               |
+| `Dockerfile`                                      | Source — the one builder: a target for every gate, the binary, the packages and their install checks                                                                     |
+| `packaging/`                                      | Source — the nfpm manifest of the `.deb` and the `.rpm`, the Debian copyright file, and the install-check scripts                                                        |
+| `.github/workflows/`                              | Operation — the CI workflow, which builds the `Dockerfile`'s targets and uploads the checked packages                                                                    |
+| `LICENSE`, `NOTICE`                               | The Apache License 2.0, and the product's name and copyright line                                                                                                         |
 | `.plan/`                                          | Record — `00-index.md` is the register; reviews go under `reviews/<round>/`                                                                                               |
 
 This document is itself governed by the model it describes: it states the rules in force and carries no history of its own.

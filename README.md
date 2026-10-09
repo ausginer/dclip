@@ -11,12 +11,12 @@ DClip was written so that Claude Code can paste images inside a devcontainer.
 
 | Where                  | What it needs                                                        |
 | ---------------------- | -------------------------------------------------------------------- |
-| Fedora x86_64          | The built binary, the real `wl-paste`; `xsel` for text sync          |
-| Working devcontainer   | An existing Python 3, the shared directory, a PATH setting           |
-| Build environment      | Rust 1.89+ with the musl target, or Docker with the provided Dockerfile |
+| Fedora x86_64          | The `dclip` package, or the built binary; the real `wl-paste`; `xsel` for text sync |
+| Working devcontainer   | An existing Python 3, the mounted directories, a PATH setting        |
+| Build environment      | Docker, or Rust 1.89+ with the musl target                           |
 
 Python, Cargo and rustc do not need to be installed on Fedora. The Python file
-lives in the shared directory but runs only inside the devcontainer. The binary
+is installed on the host but runs only inside the devcontainer. The binary
 is built for `x86_64-unknown-linux-musl` and statically linked, so it does not
 depend on Fedora's glibc version.
 
@@ -26,12 +26,29 @@ passed in memory, and no clipboard history is kept. The wrappers export images
 only and are not a full replacement for the real clipboard tools. A single
 response is limited to 64 MiB.
 
+There are two ways to install DClip on the host: the `dclip` package, or
+`setup-host.sh` from a checkout. They differ in where the files go, and so in
+what the container mounts. Each step below says where they differ.
+
 ## 1. Build
 
 All build commands run from the repository root, in a container or anywhere
 else with the tools; nothing Rust-related is needed on Fedora.
 
-With a Docker CLI that can reach a Docker daemon:
+**The packages.** Each run of the repository's CI workflow uploads the `.rpm`
+and the `.deb` as an artifact named `dclip-packages`. To build them yourself,
+with a Docker CLI that can reach a Docker daemon:
+
+```bash
+docker build --target packages --output type=local,dest=dist .
+```
+
+This runs the Rust tests, builds the release binary, packages it with the
+container wrapper, and installs and removes each package in a Fedora and a
+Debian image to check it. Only then does it export
+`dist/dclip-<version>-1.x86_64.rpm` and `dist/dclip_<version>-1_amd64.deb`.
+
+**The binary alone,** for `setup-host.sh`:
 
 ```bash
 docker build --target binary --output type=local,dest=dist .
@@ -57,7 +74,18 @@ the next step. Either way it has to be somewhere Fedora can read.
 
 ## 2. Install on Fedora
 
-From the repository checkout on Fedora:
+**From the package:**
+
+```bash
+sudo dnf install ./dclip-0.1.0-1.x86_64.rpm
+```
+
+It installs `/usr/bin/dclip` and the container wrapper in `/usr/share/dclip`,
+and pulls in `wl-clipboard`, and `xsel` unless weak dependencies are turned
+off. It starts and configures nothing. On Debian or Ubuntu, `sudo apt install
+./dclip_0.1.0-1_amd64.deb` does the same.
+
+**From a checkout,** without a package:
 
 ```bash
 bash setup-host.sh
@@ -74,11 +102,22 @@ This installs the binary, the container wrapper and the `bin/wl-paste` and
 directory to the host's PATH.
 
 If a text-sync watcher such as `wl-paste --watch ...` is already running, stop
-it: `--sync-text` below replaces it. Then run in a Fedora terminal:
+it: `--sync-text` below replaces it. Then run in a Fedora terminal, after a
+package install:
+
+```bash
+dclip serve --sync-text
+```
+
+or after `setup-host.sh`:
 
 ```bash
 "$HOME/.local/share/dclip/dclip" serve --sync-text
 ```
+
+Either way, `serve` puts its socket at
+`$HOME/.local/share/dclip/clipboard.sock`, and creates that directory if it
+does not exist. `DCLIP_SOCKET` overrides the path.
 
 Leave the terminal open for now; closing it, Ctrl+C or SIGTERM stops the bridge.
 It removes its socket at once and stops its text watcher, answers the requests
@@ -90,28 +129,67 @@ running when its terminal closes. `--sync-text` copies plain text into X11 with
 image, including mixed offers where an image comes with a text representation.
 If you do not need this, run `serve` without `--sync-text`.
 
-## 3. Mount the shared directory
+## 3. Mount the host's directories
 
-Mount the whole directory, not just the socket file: that way the server can be
-restarted without recreating the containers.
+Mount whole directories, not just the socket file: that way the server can be
+restarted without recreating the containers. A read-only mount is enough: the
+container reads the wrapper and connects to the socket, and creates no files on
+the host.
 
-| Side      | Path                       |
-| --------- | -------------------------- |
-| Fedora    | `$HOME/.local/share/dclip` |
-| Container | `/opt/dclip`               |
+**After a package install,** the wrapper and the socket are in two places, so
+the container mounts two directories and is told where the socket is:
 
-A read-only mount is enough: the container reads the code and connects to the
-socket, and creates no files on the host.
+| Fedora                     | Container    | Mount                         |
+| -------------------------- | ------------ | ----------------------------- |
+| `/usr/share/dclip`         | `/opt/dclip` | read-only, never `z` or `Z`   |
+| `$HOME/.local/share/dclip` | `/run/dclip` | read-only, with `z`           |
+
+and the container's environment sets
+`DCLIP_SOCKET=/run/dclip/clipboard.sock`.
 
 Docker Compose, inside the relevant service:
+
+```yaml
+volumes:
+  - /usr/share/dclip:/opt/dclip:ro
+  - ${HOME}/.local/share/dclip:/run/dclip:ro,z
+environment:
+  DCLIP_SOCKET: /run/dclip/clipboard.sock
+```
+
+For a devcontainer using `image` or `build`, extend the existing `runArgs` and
+`containerEnv`, and keep the other entries:
+
+```jsonc
+"runArgs": [
+  "--volume", "/usr/share/dclip:/opt/dclip:ro",
+  "--volume", "${localEnv:HOME}/.local/share/dclip:/run/dclip:ro,z"
+],
+"containerEnv": {
+  "DCLIP_SOCKET": "/run/dclip/clipboard.sock"
+}
+```
+
+`/usr/share/dclip` belongs to the package, so it is mounted without
+relabelling: `z` would relabel files the package database tracks. Whether a
+container under enforcing SELinux may run the wrapper from there has not been
+verified yet.
+
+**After `setup-host.sh`,** the wrapper and the socket share one directory, and
+the wrapper finds the socket beside itself:
+
+| Fedora                     | Container    | Mount               |
+| -------------------------- | ------------ | ------------------- |
+| `$HOME/.local/share/dclip` | `/opt/dclip` | read-only, with `z` |
+
+Docker Compose:
 
 ```yaml
 volumes:
   - ${HOME}/.local/share/dclip:/opt/dclip:ro,z
 ```
 
-For a devcontainer using `image` or `build`, extend the existing `runArgs` and
-keep the other arguments:
+A devcontainer:
 
 ```jsonc
 "runArgs": [
@@ -122,7 +200,7 @@ keep the other arguments:
 
 `z` applies a shared SELinux label, usable by several containers. Do not use `Z`
 for this shared directory. Docker `--mount` does not support relabelling, which
-is why the example uses `--volume`. Recreate the container after changing its
+is why the examples use `--volume`. Recreate the container after changing its
 mounts.
 
 ## 4. PATH in the container
@@ -137,13 +215,7 @@ command -v wl-paste xclip
 Expect `/opt/dclip/bin/wl-paste` and `/opt/dclip/bin/xclip`.
 To make it permanent, add the export to the container user's shell
 configuration, or set PATH through the image, Compose or devcontainer settings.
-
-On the host, `serve` puts its socket at
-`$HOME/.local/share/dclip/clipboard.sock`, wherever the binary is, and creates
-that directory if it does not exist. In the container, the wrappers find the
-socket beside themselves, in the mounted directory. `DCLIP_SOCKET` overrides
-the path on either side. There is no need to set a dummy `DISPLAY` or
-`WAYLAND_DISPLAY`.
+There is no need to set a dummy `DISPLAY` or `WAYLAND_DISPLAY`.
 
 ## 5. Check pasting
 
@@ -177,7 +249,14 @@ other way.
 
 ## 6. Autostart in niri
 
-Once the check passes, add this at the top level of `config.kdl`:
+Once the check passes, add one of these at the top level of `config.kdl`. After
+a package install:
+
+```kdl
+spawn-at-startup "/usr/bin/dclip" "serve" "--sync-text"
+```
+
+After `setup-host.sh`:
 
 ```kdl
 spawn-at-startup "sh" "-c" "exec \"$HOME/.local/share/dclip/dclip\" serve --sync-text"
@@ -195,8 +274,10 @@ a user-namespace mapping, the error names the UID the host sees. Allow it at
 startup:
 
 ```bash
-"$HOME/.local/share/dclip/dclip" serve --sync-text --allow-uid 1001
+dclip serve --sync-text --allow-uid 1001
 ```
+
+or, after `setup-host.sh`, the same options to `"$HOME/.local/share/dclip/dclip"`.
 
 Use the UID from the error instead of the example 1001. If SELinux refuses the
 connection before the UID check, look at the AVC record: a narrow rule for the
@@ -215,8 +296,9 @@ scripts take their place. They cover:
 - the protocol: request parsing, image type selection, the magic-byte check,
   framing, and an image at the 64 MiB limit delivered byte-exact through the
   socket;
-- the server as it runs: the command line and its exit status, the lock that
-  refuses a second instance, replacing a stale socket and refusing any other
+- the server as it runs: the command line and its exit status, the default
+  socket and the directory it creates for it, the lock that refuses a second
+  instance, replacing a stale socket and refusing any other
   file at its path, the concurrency limit, and a clean exit on SIGTERM, SIGINT
   or SIGHUP that removes the socket at once, turns away a client still sending
   its request and waits for requests already received, holding its lock until
@@ -231,7 +313,7 @@ scripts take their place. They cover:
   image and not rewriting text X11 already holds, and the watcher ending when
   the bridge is killed.
 
-The Docker build runs them before building. From the repository root:
+From the repository root:
 
 ```bash
 cargo test
@@ -244,6 +326,24 @@ wrapper's request arrived:
 ```bash
 python3 -m unittest discover -s . -p test_bridge.py -v
 ```
+
+**CI.** Every push and pull request runs the repository's GitHub Actions
+workflow. Each of its jobs builds one target of the root `Dockerfile`, so any of
+them can be rerun locally with nothing but Docker:
+
+| Target      | What it checks                                                       |
+| ----------- | -------------------------------------------------------------------- |
+| `fmt`       | `cargo fmt --check`                                                  |
+| `clippy`    | `cargo clippy --workspace --all-targets -- -D warnings`              |
+| `test`      | `cargo test --workspace`                                             |
+| `musl`      | the same tests for `x86_64-unknown-linux-musl`, then the release binary |
+| `python`    | the container wrapper's tests                                        |
+| `guard`     | the tests of the repository's agent tooling                          |
+| `check-rpm` | the `.rpm` installs on Fedora with its dependencies and nothing else, carries exactly its files, serves through its own wrapper, and removes cleanly |
+| `check-deb` | the same for the `.deb` on Debian, without the end-to-end run        |
+
+For example, `docker build --target check-rpm .`. Once all of them pass, the
+workflow uploads the packages the checks installed.
 
 The host needs Linux 5.3 or later. Pasting end to end into Claude Code inside a
 devcontainer has not been verified yet. The check in step 5 separates DClip

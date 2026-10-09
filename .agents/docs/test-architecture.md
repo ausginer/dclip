@@ -180,15 +180,32 @@ Expected values come from different authorities depending on the contract.
 
 ## CI policy
 
-**Not installed.** This section states the requirement, not a mechanism that
-runs today: there is no workflow, and local verification is what stands behind
-every change.
+**Installed.** `.github/workflows/ci.yml` runs on every push to any branch, on
+every pull request and on manual dispatch. Each of its jobs is one `docker
+build --target` of the root `Dockerfile`, so a job that fails reruns
+identically on any machine with Docker, and the workflow carries no build or
+test logic of its own.
 
-When it exists, every change is gated on `cargo fmt --check`, `cargo clippy
---workspace --all-targets -- -D warnings`, the default `cargo test --workspace`,
-the Python suite and the guard's `node --test` suite. Anything needing a Wayland
-session is not part of the gate, because a gate that can fail for a reason
-unrelated to the change is a gate people learn to re-run rather than read.
+Every change is gated on `cargo fmt --check`, `cargo clippy --workspace
+--all-targets -- -D warnings`, the default `cargo test --workspace`, the same
+tests for `x86_64-unknown-linux-musl`, the Python suite and the guard's `node
+--test` suite. Each runs as an unprivileged user in an image pinned by tag and
+digest, so the gate fails only on a change to this repository. Anything needing
+a Wayland session is not part of the gate, because a gate that can fail for a
+reason unrelated to the change is a gate people learn to re-run rather than
+read.
+
+**The packages are checked as a host installs them.** `check-rpm` on Fedora and
+`check-deb` on Debian stable install the package from its file with the
+distribution's resolver, with documentation and recommended packages included,
+and assert its metadata, its dependencies, every file it owns with its mode and
+content, and that removing it leaves none of them. `check-rpm` also runs the
+packaged layout end to end without Wayland: `serve` as an unprivileged user,
+the packaged `wl-paste` over its socket, and SIGTERM. That proves the layout and
+the socket, not a paste; §The end-to-end check still owes the paste.
+
+The `.deb` and the `.rpm` are uploaded only from a run in which every gate and
+both checks passed, and they are the files the checks installed.
 
 ---
 
@@ -244,3 +261,17 @@ Changed by `D-14`, when the shim began to read a response after a failed send. T
 >    translation and output, with `request_host` mocked. They prove that each
 >    supported `wl-paste`/`xclip` invocation becomes the right request and that
 >    everything else is refused.
+
+### 2026-10-09 — CI is installed
+
+Changed by `D-25`, when the workflow and the root `Dockerfile` were added. §CI policy read:
+
+> **Not installed.** This section states the requirement, not a mechanism that
+> runs today: there is no workflow, and local verification is what stands behind
+> every change.
+>
+> When it exists, every change is gated on `cargo fmt --check`, `cargo clippy
+> --workspace --all-targets -- -D warnings`, the default `cargo test --workspace`,
+> the Python suite and the guard's `node --test` suite. Anything needing a Wayland
+> session is not part of the gate, because a gate that can fail for a reason
+> unrelated to the change is a gate people learn to re-run rather than read.
