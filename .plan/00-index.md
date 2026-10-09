@@ -1111,9 +1111,25 @@ Once it is chosen: add the license file, set `license` in the workspace manifest
 
 - `LICENSE` at the repository root is the Apache License 2.0 text as published at `https://www.apache.org/licenses/LICENSE-2.0.txt`, unmodified. Its appendix's copyright line is left as the template gives it.
 - `[workspace.package]` sets `license = "Apache-2.0"`, and `crates/host` inherits it.
-- `NOTICE` at the repository root carries the copyright line, `Copyright 2026 Vladimir Rindevich`, which the owner gave. `LICENSE` keeps the published text, appendix included, because the appendix is a template for notices and not part of the grant.
+- `NOTICE` at the repository root names the product, DClip, and carries the copyright line, `Copyright 2026 Vladimir Rindevich`, which the owner gave. `LICENSE` keeps the published text, appendix included, because the appendix is a template for notices and not part of the grant.
 - `README.md` §License names the holder and both files.
 - Owed by stage 2 of [`plan.md`](packaging/plan.md): the packaging manifest sets the same value, so that the `.rpm`'s `License` tag is `Apache-2.0` and the `.deb` carries the license in `/usr/share/doc/claude-clipboard/copyright`, whose `Copyright:` field is `NOTICE`'s line. `D-18`'s "no license value" property no longer applies, because the condition it waited on is met.
+
+#### Q-3 — Which published names follow the product's rename to DClip?
+
+2026-10-09 · Open · Routed to the architect by the owner · Blocks stage 2 of [`plan.md`](packaging/plan.md), which publishes the package name and its paths
+
+The owner renamed the product DClip, short for `devcontainer-clipboard`, because the bridge is not tied to Claude. `NOTICE` and `README.md`'s title already say DClip. Nothing else was renamed.
+
+The name is still `claude` in every value `CONTRIBUTING.md` §4 publishes, and in values that `D-17` and `D-18` fix:
+
+- the binary `claude-clipboard-host`, and `setup-host.sh`'s install of it;
+- the environment variables `CLAUDE_CLIPBOARD_SOCKET` and `CLAUDE_CLIPBOARD_TRACE`;
+- the socket directory `$HOME/.local/share/claude-clipboard` (`D-17`);
+- the package name `claude-clipboard` and its directory `/usr/share/claude-clipboard` (`D-18`);
+- the container's mount points `/opt/host-clipboard` and `/run/host-clipboard`, which do not carry the name.
+
+Nothing is released, so `CONTRIBUTING.md` §8 owes no compatibility for a rename now. Once stage 2 publishes packages, a rename of these values becomes a migration. The README's prose about Claude Code, which is the client the bridge was written for, is a separate question from the names.
 
 ---
 

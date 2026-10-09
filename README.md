@@ -1,4 +1,4 @@
-# Images in Claude CLI inside a devcontainer
+# DClip: images in Claude CLI inside a devcontainer
 
 The host side is written in Rust. On request over a Unix socket, it reads the
 current image from the Fedora Wayland clipboard. Inside the container, the
@@ -247,4 +247,4 @@ particular CLI or terminal.
 
 ## License
 
-Copyright 2026 Vladimir Rindevich. Licensed under the Apache License 2.0: see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+DClip is copyright 2026 Vladimir Rindevich. It is licensed under the Apache License 2.0: see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).

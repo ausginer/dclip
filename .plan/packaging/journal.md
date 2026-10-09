@@ -70,3 +70,7 @@ A dated log of this work: what was done, what was found, what is waiting. Newest
 **`Q-2`, the same session.** The owner chose Apache-2.0. `LICENSE`, the workspace's `license` field and `README.md` §License are a commit of their own, and `Q-2` §Answer in the register says what stage 2 owes: the same value in the packaging manifest, carried into both formats.
 
 **`NOTICE`, the same session.** The owner gave the copyright line, `Copyright 2026 Vladimir Rindevich`. It is in a root `NOTICE` rather than in `LICENSE`'s appendix, which stays as published. `Q-2` §Answer and the plan's stage-2 note name it as the `.deb` copyright file's `Copyright:` field.
+
+**The rename to DClip, the same session.** The owner renamed the product DClip. `NOTICE` and `README.md`'s title say so. The published names that carry `claude` are an architectural question, because `D-17` and `D-18` fix some of them, so they are registered as `Q-3` for the architect. Stage 2 waits on it, so that the packages are first built under their final names.
+
+**Waiting:** `Q-3`, by an `architect` session; then stage 2, by an `implementer` session.
