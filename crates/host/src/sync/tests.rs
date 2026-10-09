@@ -43,7 +43,7 @@ fn sync(state: Option<&str>, wayland: &Wayland, x11: Result<Vec<u8>>) -> Option<
         |query| wayland.query(query),
         || x11,
         |text| {
-            written = Some(text);
+            written = Some(text.to_vec());
             Ok(())
         },
     )

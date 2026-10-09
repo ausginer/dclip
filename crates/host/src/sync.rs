@@ -30,7 +30,7 @@ pub(crate) fn sync_text(
     state: Option<&str>,
     mut wayland: impl FnMut(Query) -> Result<Vec<u8>>,
     x11_text: impl FnOnce() -> Result<Vec<u8>>,
-    set_x11_text: impl FnOnce(Vec<u8>) -> Result<()>,
+    set_x11_text: impl FnOnce(&[u8]) -> Result<()>,
 ) -> Result<()> {
     if state.is_some_and(|state| !matches!(state, "data" | "sensitive")) {
         return Ok(());
@@ -50,7 +50,7 @@ pub(crate) fn sync_text(
     if !may_sync_text(&wayland(Query::Types)?) {
         return Ok(());
     }
-    set_x11_text(text)
+    set_x11_text(&text)
 }
 
 #[cfg(test)]
