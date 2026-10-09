@@ -16,8 +16,7 @@ use std::env;
 pub(crate) type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn main() {
-    let args = env::args().skip(1).collect::<Vec<_>>();
-    let result = cli::parse(&args).and_then(|command| match command {
+    let result = cli::parse(env::args_os().skip(1)).and_then(|command| match command {
         cli::Command::Serve(options) => server::serve(&options),
         cli::Command::SyncText => sync::run(),
     });
