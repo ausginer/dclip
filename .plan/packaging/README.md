@@ -19,5 +19,5 @@ The entries themselves are canonical in the register, [`00-index.md`](../00-inde
 | Series    | Entries       | In short                                                                                                                  |
 | --------- | ------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | Findings  | `F-35`        | A non-UTF-8 argument makes the binary panic                                                                               |
-| Decisions | `D-16`–`D-23` | `lexopt` over OS strings with `D-12` kept. `D-17`–`D-19`, superseded by their restatements `D-21`–`D-23` under the names `D-20` sets: the default socket in the user's data directory, the `dclip` packages, and one Docker build that the workflow only invokes |
+| Decisions | `D-16`–`D-25` | `lexopt` over OS strings with `D-12` kept. The names `D-20` sets. Under them, in force: the default socket in the user's data directory (`D-21`), the `dclip` packages with `LICENSE` and `NOTICE` (`D-24`), and one Docker build that the workflow only invokes (`D-25`). `D-17`–`D-19` and `D-22`–`D-23` are superseded |
 | Questions | `Q-2`, `Q-3`  | The packages' license: Apache-2.0, answered by the owner. Which published names follow the rename to DClip: all of them, answered by `D-20` |

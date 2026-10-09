@@ -110,3 +110,27 @@ A dated log of this work: what was done, what was found, what is waiting. Newest
 **Noticed, not decided.** `Q-2` §Answer owes a `License` tag in the `.rpm` and a copyright file in the `.deb`, and `D-22` carries exactly that. Neither package is required to ship `LICENSE` or `NOTICE` as files. Apache-2.0 §4(a) and §4(d) ask a redistributor to pass both on, and Fedora's packaging guidelines expect `%license` for the license text. This was outside the request, so `D-22` does not add it. It is the owner's to raise before stage 2's step 2.4.
 
 **Waiting:** stage 2 from step 2.0, by an `implementer` session; then the owner's Fedora check and round r3.
+
+## 2026-10-09 — `LICENSE` and `NOTICE` in the packages (architect)
+
+**Session.** The same architect session. The request: before stage 2, complete the packaging contract. Both formats ship `LICENSE` and `NOTICE` as package-owned files, byte-identical to the repository's, at appropriate paths. Install-and-remove checks are required for them. Update the affected decisions and plan under the record rules. `D-20`'s naming stands, and `Q-1` stays out of scope. This settles what the previous entry left as noticed and not decided.
+
+**Decided.**
+
+- **`D-24` supersedes `D-22`** and adds the files:
+  - in the `.rpm`, `%license` files under `/usr/share/licenses/dclip/`;
+  - in the `.deb`, plain files in `/usr/share/doc/dclip/`, beside `copyright`;
+  - in both, mode 0644 and owned by the package with their directory.
+
+  Adding contents changes what the decision requires, so it supersedes rather than amends (`documentation.md` §6). `D-22` was one entry old and unimplemented, and the rule does not distinguish.
+- **`D-25` supersedes `D-23`.** Its checks assert the files' bytes, paths, mode and ownership, `rpm -qL` on Fedora, and their removal. Each check also installs with no documentation exclusion in effect, and asserts that before it installs.
+- `D-21`'s citation of the packaged binary's location is re-pointed from `D-22` to `D-24`. That is a corrected citation, made in place.
+
+**Found.** `D-23` as written would have failed on a correct package. Fedora's container image sets `tsflags=nodocs`, which drops the `README.md` that `D-23` asserted at the documentation path. A Debian `-slim` image excludes `/usr/share/doc/*` apart from `copyright`. Both statements come from published sources, not from running the pinned images. The plan's note tells the implementer to read the image's configuration.
+
+**Judgement calls an owner may want to revisit:**
+
+- **The `.deb`'s license files sit in `/usr/share/doc/dclip/`,** so a system that excludes documentation through dpkg drops them and keeps `copyright`. Lintian may report them as `extra-license-file`. No lintian gate runs.
+- **No second Fedora install with `nodocs`.** `rpm -qL` stands in for it.
+
+**Waiting:** stage 2 from step 2.0, by an `implementer` session; then the owner's Fedora check and round r3.

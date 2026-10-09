@@ -1,6 +1,6 @@
 # Decisions: the alternatives and why they lost
 
-The decisions themselves — statement, argument and required properties — are canonical in [`00-index.md`](../00-index.md) as `D-16`–`D-23`. `D-21`–`D-23` restate `D-17`–`D-19` under `D-20`'s names, so the alternatives below for the earlier three hold for their successors. This document keeps what the register entries do not: the options that were weighed, and why each one lost. An implementer owes the required properties in the register, and nothing here.
+The decisions themselves — statement, argument and required properties — are canonical in [`00-index.md`](../00-index.md) as `D-16`–`D-25`. `D-21`–`D-23` restate `D-17`–`D-19` under `D-20`'s names, and `D-24` and `D-25` restate `D-22` and `D-23` with the license files. The alternatives below for the earlier decisions hold for their successors. This document keeps what the register entries do not: the options that were weighed, and why each one lost. An implementer owes the required properties in the register, and nothing here.
 
 ### The parser (D-16)
 
@@ -21,9 +21,9 @@ Canonical entry: `D-21`, which supersedes `D-17` — `$HOME/.local/share/dclip/c
 - **Honour `$XDG_DATA_HOME`.** Rejected. The mount source written in a compose file would then depend on a variable the container definition cannot see. The README's path is `$HOME/.local/share/claude-clipboard`, and `CLAUDE_CLIPBOARD_SOCKET` remains the override.
 - **Fall back to the home directory only when the executable's directory is not writable.** Rejected. Two rules where one does, and the socket's location would depend on file permissions the user never looks at.
 
-### The packages (D-18, D-22)
+### The packages (D-18, D-22, D-24)
 
-Canonical entry: `D-22`, which supersedes `D-18` — `dclip`, the binary in `/usr/bin` and the shim in `/usr/share/dclip`. The options below were weighed under the old names.
+Canonical entry: `D-24`, which supersedes `D-22`, which superseded `D-18` — `dclip`, the binary in `/usr/bin`, the shim in `/usr/share/dclip`, and `LICENSE` and `NOTICE` as package-owned files. The options below were weighed under the old names.
 
 - **One mount, with the shim copied into the user's directory.** That would need a per-user step after every install or upgrade, and a copied shim goes stale when the host is upgraded, although the two ends of the protocol ship together. Rejected.
 - **The host binary embeds `bridge.py` and writes it beside the socket when `serve` starts.** One mount, and a shim that is always current. Rejected: it gives the server a file-installing responsibility it does not otherwise have, and the owner asked for the shim to be in the package. It is the candidate to reconsider if the owner's Fedora check shows that a container may not execute the shim from `/usr/share`.
@@ -34,9 +34,9 @@ Canonical entry: `D-22`, which supersedes `D-18` — `dclip`, the binary in `/us
 - **A systemd user unit in the package.** Not asked for, and `Q-1`, the watcher's death while serving, would shape such a unit. Out of scope.
 - **Retire `setup-host.sh`.** Not asked for. With `D-19`, a Fedora user can build the `.rpm` with Docker alone, so the script's remaining case is an install without root. The owner may retire it later, which would leave one layout in the README.
 
-### The builder and the workflow (D-19, D-23)
+### The builder and the workflow (D-19, D-23, D-25)
 
-Canonical entry: `D-23`, which supersedes `D-19` — one Docker build, and the workflow is a thin caller.
+Canonical entry: `D-25`, which supersedes `D-23`, which superseded `D-19` — one Docker build, the workflow a thin caller, and install checks that see every file a package owns.
 
 - **nfpm**, against `cargo-deb` with `cargo-generate-rpm`, against native `dpkg-deb` with `rpmbuild`, and against `fpm`.
   - nfpm is taken. It writes both formats from one declarative manifest, and it generates no dependencies and rewrites no shebangs, so the shim ships byte-identical and Python is never declared. It comes as an official image, so neither the host nor the builder needs Go.
@@ -64,3 +64,20 @@ Canonical entry: `D-20` — every published name carries `dclip`, and a client i
 - **Take Claude Code out of the README.** Rejected. Claude Code is the client the bridge was written for, and the paste check and the tracing exist because of how it reads the clipboard. Describing DClip without a client, and keeping that client's sections where its behaviour is the subject, keeps both true.
 - **Rewrite the record to the new names.** Rejected by `documentation.md` §6. Findings, investigations, journals and implemented decisions describe the tree when they were written. `D-17`–`D-19` are superseded rather than edited.
 - **One decision that renames the values in `D-17`–`D-19` without superseding them.** Rejected. A changed path is a change in what a decision requires of the code, and a decision amended that way would be partly in force (`documentation.md` §6).
+
+### The license files (D-24, D-25)
+
+Canonical entries: `D-24` — `LICENSE` and `NOTICE` in both packages, at each format's paths; `D-25` — install checks that see them.
+
+The owner asked for both files in both formats, byte-identical and owned by the package, so these options are about where the files go and how they are checked, not whether they ship.
+
+- **One path in both formats.**
+  - `/usr/share/licenses/dclip/` is Fedora's, and Debian has no such directory.
+  - `/usr/share/doc/dclip/` in the `.rpm` would make them documentation, which `tsflags=nodocs` drops, as Fedora's container image does.
+  
+  Rejected. Each format's own convention is the one its tooling and its users look in.
+- **Mark them `%doc` in the `.rpm`.** Rejected for the same reason: `%license` exists so that license texts survive a `nodocs` install.
+- **In the `.deb`, rely on `copyright` and `/usr/share/common-licenses/Apache-2.0`, as Debian policy expects.** Rejected by the owner's requirement. `common-licenses` is the distribution's file, not the package's, and it holds no `NOTICE`.
+- **Copy `NOTICE`'s text into `copyright` and ship no `NOTICE`.** Rejected for the same reason. The requirement is the file, byte-identical.
+- **Leave the check images as they come.** Rejected. Fedora's image would drop `README.md`, and a `-slim` Debian image would drop `README.md`, `LICENSE` and `NOTICE`. The check would then fail on a correct package, or be weakened until it no longer checked them.
+- **Also assert a `nodocs` install on Fedora**, to show the license files survive it. Not required. `rpm -qL` listing exactly the two files shows that they are marked `%license`, and that is what makes them survive, at the cost of one query rather than a second install.

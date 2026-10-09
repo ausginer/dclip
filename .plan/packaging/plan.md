@@ -1,6 +1,6 @@
 # Plan: `lexopt`, then installable packages
 
-The order in which `D-16` and `D-20`–`D-23` land, what each stage must leave true, and how it is checked. The decisions are canonical in [`00-index.md`](../00-index.md), and their required properties are the whole of what an implementer owes. This plan only sequences them.
+The order in which `D-16`, `D-20`, `D-21`, `D-24` and `D-25` land, what each stage must leave true, and how it is checked. The decisions are canonical in [`00-index.md`](../00-index.md), and their required properties are the whole of what an implementer owes. This plan only sequences them.
 
 **Owner of each stage:** an `implementer` session, on branch `host/initial-refactoring`. **After stage 2:** the owner's check on Fedora, then round `host-initial-refactoring-r3` over the complete project. No round runs between the stages.
 
@@ -32,21 +32,21 @@ Exit:
 - The gates in `handoff.md` pass, the musl-target test included.
 - The register gains `D-16` §Implemented, with its sites, its tests and the measurement. `F-35`'s status line says it is settled. The journal records the stage.
 
-## Stage 2 — The names, the socket default, the builder, the packages and the workflow (`D-20`–`D-23`)
+## Stage 2 — The names, the socket default, the builder, the packages and the workflow (`D-20`, `D-21`, `D-24`, `D-25`)
 
-`D-17`, `D-18` and `D-19` are superseded by `D-21`, `D-22` and `D-23`, which restate them under `D-20`'s names. Build to the successors.
+`D-17` is superseded by `D-21`, which restates it under `D-20`'s names. `D-18` and `D-19` are superseded twice: by `D-22` and `D-23` for the names, and then by `D-24` and `D-25`, which add `LICENSE` and `NOTICE` to both packages and to their checks. Build to `D-21`, `D-24` and `D-25`.
 
 | Step | Entry  | Test first, and what it should show before the change | Change |
 | ---- | ------ | ----------------------------------------------------- | ------ |
 | 2.0  | `D-20` | None can fail first: this is a rename. The existing suites are the witness, with only their name literals changed, and `D-12`'s and `D-16`'s rows untouched. After the change, `D-20`'s `git grep` matches only under `.plan/`. | One commit, host and shim together: the `[[bin]]` name, `cli::USAGE`, the program-name prefix in `main`, `server::serve`'s variable, the binary tests' literals and `CARGO_BIN_EXE_dclip`, `bridge.py`'s two variables and `test_bridge.py`, `setup-host.sh`, and the export path in `crates/host/Dockerfile`. In the same commit, the current-state documents `D-20` lists, including the two rule amendments with their change records, and `README.md`'s split between DClip and Claude Code. No alias and no fallback. |
 | 2.1  | `D-21` | Binary: `serve` with `HOME` in the scratch directory, no `DCLIP_SOCKET`, and umask 077. Expects the socket at `$HOME/.local/share/dclip/clipboard.sock`, the directory at 0755, and exit 0 on SIGTERM. Before the change, no socket appears there, because `serve` binds beside the test binary. Remove the socket and lock it leaves there. | The default path and the directory's creation, in `server::serve`. A missing `HOME` exits 1 with one line. `README.md` says where the host's socket is. |
-| 2.2  | `D-23` | None. This step moves the builder. | A root `Dockerfile` with a pinned Rust image and a target for each Rust gate: fmt, clippy, the default test and the musl test. A target exports the binary as the README's command does today. Delete `crates/host/Dockerfile`, narrow `.dockerignore` to what the stages read, and update the README's build command. |
-| 2.3  | `D-23` | None. | Targets for the Python suite and the guard's `node --test` suite, each in a pinned image. |
-| 2.4  | `D-22` | None. | The nfpm manifest under `packaging/`, with `D-22`'s license, and a target that runs a pinned nfpm image over the binary from 2.2, the tracked `bridge.py` and `NOTICE`'s copyright line. It exports the `.deb` and the `.rpm` to `dist/`. |
-| 2.5  | `D-22`, `D-23` | Each check names the property behind each assertion. Its strength is shown in 2.7. | The install-and-remove check targets: Fedora with the `.rpm` and the end-to-end smoke, and Debian stable with the `.deb`. Their scripts live under `packaging/`, in bash with `set -euo pipefail`. |
-| 2.6  | `D-23` | None. | The workflow under `.github/workflows/`. Its jobs are `docker build --target …` calls and nothing else. The artifact upload depends on every gate and both checks. |
-| 2.7  | `D-23` | The first pushed run is the first time the builder ever runs. Read every job's log, not only its status. | Push the branch, and fix forward until every job passes on the pushed head. Show the checks' strength: a run with one deliberate mutation, made by a commit and reverted by the next, must fail the check that names it. Candidates are dropping `recommends: xsel`, or making `bridge.py` 0644. If no mutation can be run that way, the journal says so. Download the artifacts and confirm their names, versions and architectures. |
-| 2.8  | `D-21`–`D-23` | None. This is documentation. | `README.md`: the package install, both container layouts, the autostart line for `/usr/bin/dclip`, and CI in §Tests, under `D-20`'s names and its split between DClip and Claude Code. `test-architecture.md` §CI policy, with a change-record entry. `documentation.md` §8, and `AGENTS.md` §Where things are. The SELinux sentence stays unclaimed (`D-22`). |
+| 2.2  | `D-25` | None. This step moves the builder. | A root `Dockerfile` with a pinned Rust image and a target for each Rust gate: fmt, clippy, the default test and the musl test. A target exports the binary as the README's command does today. Delete `crates/host/Dockerfile`, narrow `.dockerignore` to what the stages read, and update the README's build command. |
+| 2.3  | `D-25` | None. | Targets for the Python suite and the guard's `node --test` suite, each in a pinned image. |
+| 2.4  | `D-24` | None. | The nfpm manifest under `packaging/`, with `D-24`'s license metadata and its per-format license files: `LICENSE` and `NOTICE` as license-type files under `/usr/share/licenses/dclip/` for the `.rpm`, and as plain files in `/usr/share/doc/dclip/` for the `.deb`, each entry limited to its packager. A target runs a pinned nfpm image over the binary from 2.2, the tracked `bridge.py`, `LICENSE` and `NOTICE`. It exports the `.deb` and the `.rpm` to `dist/`. `.dockerignore` admits `LICENSE` and `NOTICE`. |
+| 2.5  | `D-24`, `D-25` | Each check names the property behind each assertion. Its strength is shown in 2.7. | The install-and-remove check targets: Fedora with the `.rpm` and the end-to-end smoke, and Debian stable with the `.deb`. Their scripts live under `packaging/`, in bash with `set -euo pipefail`. |
+| 2.6  | `D-25` | None. | The workflow under `.github/workflows/`. Its jobs are `docker build --target …` calls and nothing else. The artifact upload depends on every gate and both checks. |
+| 2.7  | `D-25` | The first pushed run is the first time the builder ever runs. Read every job's log, not only its status. | Push the branch, and fix forward until every job passes on the pushed head. Show the checks' strength: a run with one deliberate mutation, made by a commit and reverted by the next, must fail the check that names it. Candidates are dropping `recommends: xsel`, making `bridge.py` 0644, or dropping the `.rpm`'s license type from `NOTICE`, which only `rpm -qL` catches. If no mutation can be run that way, the journal says so. Download the artifacts and confirm their names, versions and architectures. |
+| 2.8  | `D-21`, `D-24`, `D-25` | None. This is documentation. | `README.md`: the package install, both container layouts, the autostart line for `/usr/bin/dclip`, and CI in §Tests, under `D-20`'s names and its split between DClip and Claude Code. `test-architecture.md` §CI policy, with a change-record entry. `documentation.md` §8, and `AGENTS.md` §Where things are. The SELinux sentence stays unclaimed (`D-24`). |
 
 Notes:
 
@@ -54,15 +54,16 @@ Notes:
 - **2.0 renames nothing in the agent harness** — `.claude/`, `.claude-plugin/`, `CLAUDE.md`, `.scripts/`, the `CLAUDE_*` variables in `.devcontainer/` — and keeps `README.md`'s Claude Code sections where Claude Code's behaviour is the subject (`D-20`). A repository-wide replacement of `claude` is wrong for both.
 - **2.1 changes user-facing behaviour** only for a binary run from outside `$HOME/.local/share/dclip`. `setup-host.sh` is unchanged by 2.1.
 - **A test that fails only in the builder is a finding, not a flake.** Two examples: the suite running as root in the image, and a coreutils older than `test-architecture.md` §The layers requires. Stop and report it. Do not skip the test, weaken it, or `#[ignore]` it to make the run pass.
-- **Exact versions** are the implementer's to choose at the time of the step, each a current release. That covers the images, GitHub's actions and the runner label. Name them in `D-23` §Implemented. No commit identifier appears in any tracked file. An image digest, where one is used, is written `sha256:<hex>` (`documentation.md` §10).
+- **Exact versions** are the implementer's to choose at the time of the step, each a current release. That covers the images, GitHub's actions and the runner label. Name them in `D-25` §Implemented. No commit identifier appears in any tracked file. An image digest, where one is used, is written `sha256:<hex>` (`documentation.md` §10).
 - **The guard's suite needs a Node that runs TypeScript directly** (`AGENTS.md` §Evidence). Choose the image accordingly. If the suite needs something the image cannot provide, such as a Claude Code installation, stop and report it rather than dropping the gate.
-- **The license is `D-22`'s,** from `Q-2` §Answer: the `.rpm`'s `License` tag is `Apache-2.0`, and the `.deb` carries `/usr/share/doc/dclip/copyright`, with `NOTICE`'s line as its `Copyright:` field. The checks in 2.5 assert both, as `D-23` requires.
+- **The license is `D-24`'s:** the metadata from `Q-2` §Answer, and `LICENSE` and `NOTICE` as files the package owns. The `.rpm`'s `License` tag is `Apache-2.0`. The `.deb` carries `/usr/share/doc/dclip/copyright`, with `NOTICE`'s line as its `Copyright:` field. Both carry the two files, byte-identical, at their format's paths. The checks in 2.5 assert all of it, as `D-25` requires.
+- **The check images install documentation** (`D-25`). Fedora's container image sets `tsflags=nodocs` in `/etc/dnf/dnf.conf`, and a Debian `-slim` image excludes `/usr/share/doc/*` in `/etc/dpkg/dpkg.cfg.d/`. Read the pinned image's configuration rather than trusting either statement. Override or remove the exclusion for the install, and assert that it is gone before installing. Do not weaken an assertion about a documentation or license file to fit the image.
 
 Exit:
 
 - Every job of the workflow passes on the pushed head of the branch, and the artifacts install as the checks describe.
 - The gates in `handoff.md` pass locally for everything the devcontainer can run, and `bash -n` passes for every new script.
-- The register gains `D-20` §Implemented, `D-21` §Implemented, `D-22` §Implemented and `D-23` §Implemented. The last names the run number, the pinned versions, and the mutation run from 2.7 or the reason there was none. The journal records the stage.
+- The register gains `D-20` §Implemented, `D-21` §Implemented, `D-24` §Implemented and `D-25` §Implemented. The last names the run number, the pinned versions, and the mutation run from 2.7 or the reason there was none. The journal records the stage.
 - The branch is pushed.
 
 ## After stage 2
@@ -70,15 +71,15 @@ Exit:
 1. **The owner's check on Fedora,** with SELinux enforcing:
    - install the `.rpm` from the run's artifacts with `dnf`;
    - start `/usr/bin/dclip serve --sync-text`;
-   - start a container with `D-22`'s two mounts and its environment;
+   - start a container with `D-24`'s two mounts and its environment;
    - run README step 5, and paste into Claude Code.
    
-   The result is recorded as an investigation. A denial goes to the architect with its AVC record (`D-22`). The same check also stands in for the end-to-end check still owed since phase 4.
+   The result is recorded as an investigation. A denial goes to the architect with its AVC record (`D-24`). The same check also stands in for the end-to-end check still owed since phase 4.
 2. **Round `host-initial-refactoring-r3`,** run by a fresh `consolidator` once the check is recorded. Its scope is the complete project at the pushed head, not a phase:
    - the host crate, `bridge.py` and its tests, and `setup-host.sh`;
    - the Dockerfile, `packaging/` and the workflow;
    - `README.md`, `CONTRIBUTING.md` and `.agents/docs/`;
-   - the record's active decisions, `D-1`–`D-23` less those superseded (`D-7`, `D-9`, `D-11`, `D-17`, `D-18` and `D-19`).
+   - the record's active decisions, `D-1`–`D-25` less those superseded (`D-7`, `D-9`, `D-11`, `D-17`, `D-18`, `D-19`, `D-22` and `D-23`).
 
 ## Out of scope
 

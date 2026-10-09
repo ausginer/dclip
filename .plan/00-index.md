@@ -804,7 +804,7 @@ Required properties:
 
 `D-17` stands with `D-20`'s names. This entry restates it, so that the contract can still be read from one entry.
 
-Without `DCLIP_SOCKET`, `server::serve` puts the socket and its lock beside the executable. That works only because `setup-host.sh` installs the binary into `$HOME/.local/share/dclip`, which the user can write to. A packaged binary lives in `/usr/bin` (`D-22`), and there opening the lock fails with a permission error before anything else happens.
+Without `DCLIP_SOCKET`, `server::serve` puts the socket and its lock beside the executable. That works only because `setup-host.sh` installs the binary into `$HOME/.local/share/dclip`, which the user can write to. A packaged binary lives in `/usr/bin` (`D-24`), and there opening the lock fails with a permission error before anything else happens.
 
 The directory `setup-host.sh` already uses becomes the default for every install. For an install made by `setup-host.sh`, nothing changes. A binary run from `dist/` or `target/` now puts its socket in the home directory instead of beside itself. Nothing is released, so no compatibility is owed for that (`CONTRIBUTING.md` §8). On a fresh package install the directory does not exist yet, and `serve` is the only thing the user runs, so `serve` creates it.
 
@@ -820,7 +820,7 @@ Required properties:
 
 #### D-22 — The `dclip` packages carry the host binary and the container shim, and require only `wl-clipboard`
 
-2026-10-09 · Accepted · Supersedes `D-18` · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 2
+2026-10-09 · Accepted · **Superseded 2026-10-09 by `D-24`** · Supersedes `D-18` · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 2
 
 `D-18` stands with `D-20`'s names. Its condition on a license is met: the owner chose Apache-2.0 (`Q-2` §Answer), so the license properties that answer owes are written here. This entry restates `D-18` with both changes, so that the packaging contract can still be read from one entry.
 
@@ -860,7 +860,7 @@ Required properties:
 
 #### D-23 — One Docker build runs every gate and makes every product, and the workflow only invokes it
 
-2026-10-09 · Accepted · Supersedes `D-19` · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 2
+2026-10-09 · Accepted · **Superseded 2026-10-09 by `D-25`** · Supersedes `D-19` · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 2
 
 `D-19` stands with `D-20`'s names, and its install checks also assert the license that `D-22` now carries. This entry restates it, so that the builder's contract can still be read from one entry.
 
@@ -908,6 +908,110 @@ Required properties:
   - [`documentation.md`](../.agents/docs/documentation.md) §8 and `AGENTS.md` §Where things are name the Dockerfile, the packaging directory and the workflow;
   - `README.md` gives the build commands and the package install.
 - **Evidence:** `D-23` §Implemented names the workflow run on the pushed head of the branch, by its run number, in which every job passed. The Docker CLI is absent from the devcontainer, so that run is the validation of the builder.
+
+#### D-24 — The `dclip` packages carry the host binary, the container shim, `LICENSE` and `NOTICE`, and require only `wl-clipboard`
+
+2026-10-09 · Accepted · Supersedes `D-22` · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 2
+
+`D-22` stands, and it gains the license files. The owner asked that both formats ship `LICENSE` and `NOTICE` as files the package owns, byte-identical to the repository's, at the paths each format uses. `D-22` carried the license only as metadata, in the `.rpm`'s `License` tag and the `.deb`'s copyright file. Apache-2.0 §4(a) and §4(d) ask whoever redistributes the work to pass on the license and the `NOTICE` text, and a package is how DClip is redistributed. This entry restates `D-22` with the files added, so that the packaging contract can still be read from one entry.
+
+**Each format puts them where its own tooling looks.**
+
+- **In the `.rpm`, they are `%license` files under `/usr/share/licenses/dclip/`.** That is where Fedora's guidelines put license texts. Marking them `%license` is what keeps them installed when documentation is not: Fedora's container image sets `tsflags=nodocs`, which drops `%doc` files and keeps `%license` ones. `rpm -qL` then lists them.
+- **In the `.deb`, they are in `/usr/share/doc/dclip/`, beside `copyright`.** Debian has no separate license directory, and its documentation directory is where a package's license material lives. A dpkg configuration that excludes `/usr/share/doc/*`, as Debian's slim images do, drops them and keeps `copyright`. That is the administrator's choice, and `copyright` still names the license and the holder. Lintian may report them as `extra-license-file`. That is informational, and it does not outweigh the owner's requirement.
+
+The two formats therefore differ in where the license files go, and in that only the `.deb` has a copyright file. Every other file is the same in both.
+
+The owner asked for installable x86_64 `.deb` and `.rpm` packages that carry the container shim, declare the runtime dependencies, and need no development tools and no Python on the host. The host binary is static musl, so it needs no C library. It runs `wl-paste` for every request and `xsel` only for `--sync-text`. The shim runs only in the container, so Python is a property of the container, never of the host.
+
+A package cannot write into a home directory, so the files it installs and the socket now live apart: the shim under `/usr/share`, root-owned, and the socket in the user's directory (`D-21`). A container therefore mounts two directories where a `setup-host.sh` install mounts one. The package's directory is mounted without relabelling, because `z` would relabel files the package owns, and the package database and `restorecon` would then disagree with the mount. Whether a container under enforcing SELinux may execute the shim from a `usr_t` path has not been observed. A 2016 note by the policy's author says the container domain may read and execute most of `/usr`. A Fedora report shows `entrypoint` refused for a `usr_t` script, but in that report the script was the container's entrypoint, which the shim never is. This is settled by observation on Fedora before the README claims it.
+
+`setup-host.sh` stays as the install from source, and its one-mount layout is unchanged.
+
+Required properties:
+
+- **Two packages per build, from one manifest:** a `.deb` for `amd64` and an `.rpm` for `x86_64`. Both are named `dclip`, and both carry the workspace version. The rpm release is `1`. Both formats come from the one manifest. Their contents differ only as the next item says.
+- **Contents, exactly:**
+  - `/usr/bin/dclip`, mode 0755: the release musl binary of the same build whose tests passed (`D-25`);
+  - `/usr/share/dclip/bridge.py`, mode 0755, byte-identical to the tracked `bridge.py`, shebang included;
+  - `/usr/share/dclip/bin/wl-paste` and `/usr/share/dclip/bin/xclip`, each a relative symlink to `../bridge.py`;
+  - `README.md` as the package's documentation, at the format's documentation path for the package;
+  - in the `.rpm`, `/usr/share/licenses/dclip/LICENSE` and `/usr/share/licenses/dclip/NOTICE`, each mode 0644 and marked as a license file, so that `rpm -qL dclip` lists exactly these two;
+  - in the `.deb`, `/usr/share/doc/dclip/LICENSE` and `/usr/share/doc/dclip/NOTICE`, each mode 0644;
+  - `LICENSE` and `NOTICE`, in both formats, byte-identical to the tracked files at the repository root;
+  - in the `.deb`, `/usr/share/doc/dclip/copyright`, below;
+  - the package owns each file above, `/usr/share/dclip` and its `bin`, and the directory that holds its license files: `/usr/share/licenses/dclip` in the `.rpm`, `/usr/share/doc/dclip` in the `.deb`. Removing the package removes them.
+- **The license is `Apache-2.0`,** the workspace manifest's value, set once in the packaging manifest:
+  - the `.rpm`'s `License` tag is `Apache-2.0`;
+  - the `.deb`'s `/usr/share/doc/dclip/copyright` names `Apache-2.0`, and its `Copyright:` field is `NOTICE`'s copyright line.
+- **Dependencies, exactly:** it requires `wl-clipboard` and recommends `xsel`. Nothing else is declared or generated:
+  - no Python;
+  - no C library;
+  - no interpreter dependency derived from the shim's shebang;
+  - no build tool.
+
+  The format's own `rpmlib(…)` capabilities are not dependencies in this sense.
+- **No maintainer scripts.** Installing starts, enables and configures nothing.
+- **The container side of a package install,** published under `CONTRIBUTING.md` §4:
+  - `/usr/share/dclip` is mounted at `/opt/dclip`, read-only, and never with `z` or `Z`;
+  - `$HOME/.local/share/dclip` is mounted at `/run/dclip`, read-only, with `z`;
+  - the container sets `DCLIP_SOCKET=/run/dclip/clipboard.sock`;
+  - `PATH` gains `/opt/dclip/bin`, as in a `setup-host.sh` install.
+- **`README.md`** gives the package install and its layout, and keeps `setup-host.sh` with its one-mount layout. It does not say that the package layout works under enforcing SELinux until the owner's Fedora check has shown it. If the check shows a denial, it goes to the architect with its AVC record. Neither `/usr/share/dclip` nor the host's policy is relabelled to work around it.
+
+#### D-25 — One Docker build runs every gate and makes every product, and its install checks see every file the packages own
+
+2026-10-09 · Accepted · Supersedes `D-23` · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 2
+
+`D-23` stands, and its install checks gain two things. They check `LICENSE` and `NOTICE`, which `D-24` adds to the packages. And they install with documentation included, which `D-23` left to chance. Fedora's container image installs with `tsflags=nodocs`, and Debian's slim images exclude `/usr/share/doc`. In either, a check that asserts a documentation file fails on a correct package, or would have to be weakened to pass. A check that asserts what a package ships has to see everything the package ships. This entry restates `D-23` with both changes, so that the builder's contract can still be read from one entry.
+
+`crates/host/Dockerfile` tests and builds the binary, and it has never been run: the devcontainer has no Docker CLI, and the journal has said so since phase 1. [`test-architecture.md`](../.agents/docs/test-architecture.md) §CI policy already names the gate that CI must run once it exists. The owner asked for GitHub Actions that produce the packages, check that they install and remove, and validate the Docker builder. Building no host tooling means that the packages, and every check on them, come from Docker alone.
+
+All of it is therefore one Docker build. The workflow is a thin caller, so that anyone with Docker reruns exactly what CI ran, and the Docker builder is validated because it is the only builder. Each image is pinned to an exact version, because a gate that fails on an upstream release teaches people to re-run it. The workflow uses no third-party action. GitHub's own actions are pinned to exact release tags rather than commit identifiers, which [`documentation.md`](../.agents/docs/documentation.md) §10 keeps out of tracked files.
+
+Required properties:
+
+- **One Dockerfile at the repository root replaces `crates/host/Dockerfile`.** `.dockerignore` admits exactly what its stages read.
+  - The README's build command still runs the musl tests and then exports `dist/dclip`.
+  - A documented target exports the `.deb` and the `.rpm` into `dist/`.
+- **Every image is pinned to an exact version:** the Rust toolchain, Python, Node, the packaging tool, Fedora and Debian. None is `latest`, a major version alone, or a release codename alone. The packaging tool is nfpm, from its official image.
+- **Every gate in `test-architecture.md` §CI policy is a target of the build:**
+  - `cargo fmt --check`;
+  - `cargo clippy --workspace --all-targets -- -D warnings`;
+  - `cargo test --workspace`;
+  - the musl-target test;
+  - the Python suite;
+  - the guard's `node --test` suite.
+
+  Each runs alone with `docker build --target …`, and with nothing on the machine but Docker and the checkout.
+- **The packages are made from the binary of the build that ran the musl tests.** It is not compiled a second time.
+- **An install-and-remove check for each format is a target, in a pinned image of a current release:** Fedora for the `.rpm`, and Debian stable for the `.deb`. Each check:
+  - installs with no exclusion of documentation or license paths in effect: on Fedora, with `tsflags=nodocs` overridden for the install; on Debian, with no dpkg `path-exclude` that reaches `/usr/share/doc`. It asserts that this is so before it installs, so that a missing file means a package that did not ship it;
+  - installs the package from the local file with the distribution's resolver, which pulls `wl-clipboard`, and `xsel` by default;
+  - asserts that the declared dependencies are exactly `D-24`'s, and that the install pulled no Python;
+  - asserts every path, mode and link target in `D-24`, and that `bridge.py` is byte-identical to the tracked file;
+  - asserts that the installed `LICENSE` and `NOTICE` are byte-identical to the tracked files, at their format's paths and mode 0644, and that the package database names `dclip` as the owner of each, and of the directory that holds them;
+  - on Fedora, asserts that `rpm -qL dclip` lists exactly the two license files;
+  - asserts the license metadata `D-24` gives for its format: the `.rpm`'s `License` tag, or the `.deb`'s copyright file with its `Copyright:` field;
+  - verifies the installed files against the package database;
+  - runs `dclip` with no arguments, and gets the usage line and exit status 1 (`D-12`);
+  - removes the package, and asserts that nothing `D-24` installed remains: `LICENSE`, `NOTICE` and the directory that held them included, beside every other file and directory.
+- **The Fedora check also runs the packaged layout end to end,** as an unprivileged user whose `$HOME/.local/share/dclip` does not exist:
+  - `serve` starts, and creates the directory and the socket (`D-21`);
+  - the packaged `wl-paste`, run with a Python installed after the dependency assertions, lists types over that socket and prints the host's own error for the missing Wayland session, not a connection error;
+  - SIGTERM ends `serve` with exit status 0 and the socket gone.
+- **The workflow, under `.github/workflows/`:**
+  - runs on a push to any branch, on a pull request and on manual dispatch;
+  - has `contents: read` permission and uses no secret;
+  - runs on a runner label with a version, not `-latest`;
+  - uses only GitHub's own actions, each pinned to an exact release tag;
+  - contains no build, test or check logic of its own, so that every job is a `docker build` of a target a reader can run locally;
+  - uploads the `.deb` and the `.rpm` as artifacts only from a run in which every gate and both install checks passed.
+- **Documentation:**
+  - `test-architecture.md` §CI policy states the gate that is installed, and its change record carries the replaced text;
+  - [`documentation.md`](../.agents/docs/documentation.md) §8 and `AGENTS.md` §Where things are name the Dockerfile, the packaging directory and the workflow;
+  - `README.md` gives the build commands and the package install.
+- **Evidence:** `D-25` §Implemented names the workflow run on the pushed head of the branch, by its run number, in which every job passed. The Docker CLI is absent from the devcontainer, so that run is the validation of the builder.
 
 ---
 
