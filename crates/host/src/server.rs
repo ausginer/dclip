@@ -238,12 +238,13 @@ pub(crate) fn serve(options: &ServeOptions) -> Result<()> {
             // `accept` failure that is not about the connection does.
             let stream = match listener.accept() {
                 Ok((stream, _)) => stream,
+                // The readiness was taken by a connection that vanished. The
+                // listener is non-blocking, so `accept` never sleeps and a
+                // signal cannot interrupt it.
                 Err(error)
                     if matches!(
                         error.kind(),
-                        io::ErrorKind::WouldBlock
-                            | io::ErrorKind::Interrupted
-                            | io::ErrorKind::ConnectionAborted
+                        io::ErrorKind::WouldBlock | io::ErrorKind::ConnectionAborted
                     ) =>
                 {
                     continue;

@@ -32,8 +32,9 @@ extern "C" fn wake(_: libc::c_int) {
 
 /// Makes SIGTERM, SIGINT and SIGHUP write a byte to a pipe and returns its
 /// read end, which is readable from then on, whichever thread the signal
-/// reached. The handlers set `SA_RESTART`, so interrupted reads and writes
-/// resume; `poll` never resumes, and every caller of [`poll`] retries it.
+/// reached. A handler that runs during a [`poll`] makes it fail with
+/// `Interrupted`, and its callers retry; every other call that can block in
+/// the serving process goes through `std`, which retries `EINTR` itself.
 pub(crate) fn wake_on_termination() -> io::Result<PipeReader> {
     let (reader, writer) = io::pipe()?;
     // A full pipe already holds a wake-up, so the handler never blocks.
@@ -46,7 +47,6 @@ pub(crate) fn wake_on_termination() -> io::Result<PipeReader> {
     unsafe {
         let mut action: libc::sigaction = std::mem::zeroed();
         action.sa_sigaction = wake as *const () as usize;
-        action.sa_flags = libc::SA_RESTART;
         libc::sigemptyset(&mut action.sa_mask);
         for signal in [libc::SIGTERM, libc::SIGINT, libc::SIGHUP] {
             if libc::sigaction(signal, &action, std::ptr::null_mut()) < 0 {
