@@ -49,8 +49,27 @@ fn should_remove_the_socket_and_exit_0_on_a_termination_signal() {
         let mut server = scratch.serve(&[]);
         server.signal(signal);
         assert_eq!(server.wait().code(), Some(0), "SIG{signal}");
+        assert_eq!(server.stderr(), "", "SIG{signal}");
         assert!(!scratch.socket().exists(), "SIG{signal} left the socket");
     }
+}
+
+#[test]
+fn should_keep_serving_after_peers_that_left_before_they_were_accepted() {
+    let scratch = Scratch::new();
+    scratch.clipboard(b"image/png\n", b"");
+    let server = scratch.serve(&[]);
+    // Stopped, `serve` accepts nothing, so every peer below has gone by the
+    // time its connection is accepted. The backlog holds far more than these.
+    server.signal("STOP");
+    for sent in [&b""[..], b"{\"op\":", b"{\"op\":\"types\"}\n"] {
+        for _ in 0..10 {
+            server.connect().write_all(sent).unwrap();
+        }
+    }
+    server.signal("CONT");
+    let response = server.request(b"{\"op\":\"types\"}\n");
+    assert_eq!(response.header["ok"], true, "{:?}", response.header);
 }
 
 #[test]

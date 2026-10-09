@@ -247,31 +247,20 @@ pub(crate) fn serve(options: &ServeOptions) -> Result<()> {
                 Poll::new(wake.as_fd(), Interest::Read),
             ];
             match sys::poll(&mut ready, None) {
-                Err(error) if error.kind() != io::ErrorKind::Interrupted => {
-                    return Err(error.into());
-                }
-                _ => {}
+                Ok(()) => {}
+                // A handled signal lands here after its handler has written
+                // the wake pipe, so waiting again is how the loop sees it.
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(error) => return Err(error.into()),
             }
             if ready[1].ready() {
                 return Ok(());
             }
-            // Nothing that concerns one connection ends the loop: only an
-            // `accept` failure that is not about the connection does.
-            let stream = match listener.accept() {
-                Ok((stream, _)) => stream,
-                // The readiness was taken by a connection that vanished. The
-                // listener is non-blocking, so `accept` never sleeps and a
-                // signal cannot interrupt it.
-                Err(error)
-                    if matches!(
-                        error.kind(),
-                        io::ErrorKind::WouldBlock | io::ErrorKind::ConnectionAborted
-                    ) =>
-                {
-                    continue;
-                }
-                Err(error) => return Err(error.into()),
-            };
+            // The listener is ready, so `accept` returns a connection, even
+            // one whose peer has already gone. An error here concerns the
+            // process rather than one connection; nothing that concerns one
+            // connection ends the loop.
+            let (stream, _) = listener.accept()?;
             let admitted = stream
                 .set_nonblocking(true)
                 .map_err(Into::into)
