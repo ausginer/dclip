@@ -12,7 +12,10 @@ use std::{
     os::unix::{fs::PermissionsExt, net::UnixStream},
     path::{Path, PathBuf},
     process::{Child, Command, ExitStatus, Output, Stdio},
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        mpsc,
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -100,8 +103,35 @@ esac"#,
         command
     }
 
+    /// Runs the binary to completion. One that is still running after
+    /// [`PATIENCE`] — a `serve` that should have refused, say — is killed and
+    /// fails the test rather than hanging it.
     pub fn run(&self, args: &[&str]) -> Output {
-        self.command(args).stdin(Stdio::null()).output().unwrap()
+        let child = self
+            .command(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut running = Running(child);
+        let deadline = Instant::now() + PATIENCE;
+        while running.0.try_wait().unwrap().is_none() {
+            assert!(Instant::now() < deadline, "{args:?} did not exit");
+            thread::sleep(Duration::from_millis(10));
+        }
+        let mut output = Output {
+            status: running.0.wait().unwrap(),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        };
+        if let Some(mut stdout) = running.0.stdout.take() {
+            stdout.read_to_end(&mut output.stdout).unwrap();
+        }
+        if let Some(mut stderr) = running.0.stderr.take() {
+            stderr.read_to_end(&mut output.stderr).unwrap();
+        }
+        output
     }
 
     /// Starts `serve` and returns once it has announced itself, which it does
@@ -116,11 +146,20 @@ esac"#,
             .unwrap();
         let stdout = child.stdout.take().unwrap();
         let mut server = Server {
-            child,
+            child: Running(child),
             socket: self.socket(),
         };
-        let mut banner = String::new();
-        BufReader::new(stdout).read_line(&mut banner).unwrap();
+        // Read on a thread of its own, so that a `serve` that neither
+        // announces itself nor exits fails the test instead of hanging it.
+        let (sender, receiver) = mpsc::channel();
+        thread::spawn(move || {
+            let mut banner = String::new();
+            let _ = BufReader::new(stdout).read_line(&mut banner);
+            let _ = sender.send(banner);
+        });
+        let banner = receiver
+            .recv_timeout(PATIENCE)
+            .expect("serve did not announce itself");
         assert!(
             banner.starts_with("Clipboard bridge: "),
             "serve did not start: {banner:?}, {:?}",
@@ -136,11 +175,21 @@ impl Drop for Scratch {
     }
 }
 
-/// A running `serve`, killed and reaped on drop, so a failed assertion never
-/// leaves one behind.
+/// A running `serve`, killed and reaped on drop.
 pub struct Server {
-    child: Child,
+    child: Running,
     socket: PathBuf,
+}
+
+/// A child killed and reaped on drop, so a failed assertion never leaves one
+/// behind.
+struct Running(Child);
+
+impl Drop for Running {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
 }
 
 pub struct Response {
@@ -150,7 +199,7 @@ pub struct Response {
 
 impl Server {
     pub fn pid(&self) -> u32 {
-        self.child.id()
+        self.child.0.id()
     }
 
     pub fn connect(&self) -> UnixStream {
@@ -174,7 +223,7 @@ impl Server {
     pub fn wait(&mut self) -> ExitStatus {
         let deadline = Instant::now() + PATIENCE;
         loop {
-            if let Some(status) = self.child.try_wait().unwrap() {
+            if let Some(status) = self.child.0.try_wait().unwrap() {
                 return status;
             }
             assert!(Instant::now() < deadline, "serve did not exit");
@@ -185,19 +234,12 @@ impl Server {
     /// Whatever the process has written to stderr. Only after it has exited.
     pub fn stderr(&mut self) -> String {
         let mut text = String::new();
-        if let Ok(Some(_)) = self.child.try_wait()
-            && let Some(mut stderr) = self.child.stderr.take()
+        if let Ok(Some(_)) = self.child.0.try_wait()
+            && let Some(mut stderr) = self.child.0.stderr.take()
         {
             stderr.read_to_string(&mut text).unwrap();
         }
         text
-    }
-}
-
-impl Drop for Server {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
     }
 }
 
