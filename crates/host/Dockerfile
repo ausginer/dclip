@@ -11,4 +11,4 @@ RUN cargo test --locked --target x86_64-unknown-linux-musl \
     && cargo build --locked --release --target x86_64-unknown-linux-musl
 
 FROM scratch AS artifact
-COPY --from=builder /src/target/x86_64-unknown-linux-musl/release/claude-clipboard-host /claude-clipboard-host
+COPY --from=builder /src/target/x86_64-unknown-linux-musl/release/dclip /dclip

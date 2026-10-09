@@ -82,7 +82,7 @@ class RequestHostTest(unittest.TestCase):
                         socket=Connection, AF_UNIX=socket.AF_UNIX, SOCK_STREAM=socket.SOCK_STREAM
                     )
                     with mock.patch.object(bridge, "socket", module), \
-                         mock.patch.dict(os.environ, {"CLAUDE_CLIPBOARD_SOCKET": path}):
+                         mock.patch.dict(os.environ, {"DCLIP_SOCKET": path}):
                         return bridge.request_host({"op": "types"})
                 finally:
                     thread.join()

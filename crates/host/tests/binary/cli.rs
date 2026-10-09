@@ -20,8 +20,7 @@ fn should_print_usage_and_exit_1_for_an_unpublished_invocation() {
         let output = scratch.run(args);
         assert_eq!(output.status.code(), Some(1), "{args:?}");
         assert!(
-            String::from_utf8_lossy(&output.stderr)
-                .starts_with("claude-clipboard-host: Usage: claude-clipboard-host serve"),
+            String::from_utf8_lossy(&output.stderr).starts_with("dclip: Usage: dclip serve"),
             "{args:?}: {:?}",
             String::from_utf8_lossy(&output.stderr)
         );
@@ -63,7 +62,7 @@ fn should_exit_1_naming_the_argument_at_fault_for_malformed_serve_arguments() {
         assert_eq!(output.status.code(), Some(1), "{args:?}");
         assert_eq!(
             String::from_utf8_lossy(&output.stderr),
-            format!("claude-clipboard-host: {message}\n"),
+            format!("dclip: {message}\n"),
             "{args:?}"
         );
         assert!(!scratch.socket().exists(), "{args:?} bound the socket");

@@ -1,4 +1,4 @@
-//! `claude-clipboard-host`: serves the host's clipboard images to a
+//! `dclip`: serves the host's clipboard images to a
 //! devcontainer over a Unix socket, and optionally mirrors plain text into X11.
 
 mod cli;
@@ -21,7 +21,7 @@ fn main() {
         cli::Command::SyncText => sync::run(),
     });
     if let Err(error) = result {
-        eprintln!("claude-clipboard-host: {error}");
+        eprintln!("dclip: {error}");
         std::process::exit(1);
     }
 }

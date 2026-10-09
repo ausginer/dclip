@@ -40,6 +40,6 @@ Probes, diagnostics, fixtures and benchmarks are fine for any role that needs on
 
 - [`README.md`](README.md) — what the bridge is and how a user builds, installs and checks it.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — how code is written: source conventions in Part I, the cost and ownership policy in Part II. This is a small tool — a static Rust binary on the host and a stdlib-only Python shim in the container — not a library: write for a truthful fellow developer who would prefer better performance and a smaller build over defensive checks against invalid usage, and keep the socket peer outside the trust boundary.
-- `crates/host/` — the host binary, `claude-clipboard-host`; `bridge.py` and `test_bridge.py` — the container shim and its tests; `setup-host.sh` — the host installer.
+- `crates/host/` — the host binary, `dclip`; `bridge.py` and `test_bridge.py` — the container shim and its tests; `setup-host.sh` — the host installer.
 - [`.agents/docs/`](.agents/docs/) — conventions and operational references: the documentation model, the test layers, how a review round is reported, the finishing loop, and how the effort guard loads.
 - `.plan/` — the record, once it exists: decisions, findings, reviews, measurements, and why anything is the way it is. `.plan/00-index.md` is its register.

@@ -21,7 +21,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub const BINARY: &str = env!("CARGO_BIN_EXE_claude-clipboard-host");
+pub const BINARY: &str = env!("CARGO_BIN_EXE_dclip");
 
 /// How long a test waits for the binary to reach a state it is expected to
 /// reach promptly. Generous, because a loaded machine runs tests in parallel.
@@ -116,7 +116,7 @@ esac"#,
             .arg(BINARY)
             .args(args)
             .env("PATH", path)
-            .env("CLAUDE_CLIPBOARD_SOCKET", self.socket())
+            .env("DCLIP_SOCKET", self.socket())
             .env_remove("CLIPBOARD_STATE");
         command
     }

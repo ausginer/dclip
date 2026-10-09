@@ -7,7 +7,7 @@ use std::ffi::{OsStr, OsString};
 #[cfg(test)]
 mod tests;
 
-pub(crate) const USAGE: &str = "Usage: claude-clipboard-host serve [--sync-text] [--allow-uid UID]";
+pub(crate) const USAGE: &str = "Usage: dclip serve [--sync-text] [--allow-uid UID]";
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Command {

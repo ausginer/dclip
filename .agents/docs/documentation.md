@@ -91,7 +91,7 @@ A rule illustrated by _the release binary measured at 600 kB_ describes one buil
 
 ## 5. Source comments
 
-**Nothing in this repository has a published API surface.** `claude-clipboard-host` is a binary crate and `bridge.py` is a script, so every comment, Rust doc comment and Python docstring here is a **maintainer note**: its reader is someone changing this code now. The user-facing surface is the command line, the socket protocol and `README.md`, and those are documented in `README.md`.
+**Nothing in this repository has a published API surface.** `dclip` is a binary crate and `bridge.py` is a script, so every comment, Rust doc comment and Python docstring here is a **maintainer note**: its reader is someone changing this code now. The user-facing surface is the command line, the socket protocol and `README.md`, and those are documented in `README.md`.
 
 ### 5.1 What a comment states
 
@@ -106,6 +106,8 @@ A rule illustrated by _the release binary measured at 600 kB_ describes one buil
 ### 5.2 User-facing text
 
 Usage strings, error messages and `README.md` carry only what a user outside this repository can act on: no record identifiers, no `§` citations of internal documents, no `.plan/` links, no dates, no commit references.
+
+**User-facing text calls the product DClip, and describes it without naming a client.** It names a client only where that client's behaviour is the subject — how to check a paste in it, how it calls the tools, its own issues. DClip was written for Claude Code, and the README says so once, but it claims no other client.
 
 ### 5.3 The test
 
@@ -189,7 +191,7 @@ A convention with no instrument is a convention that decays, and the classes abo
 | `.claude-plugin/marketplace.json`                 | Operation — the repository-local marketplace that declares the guard                                                                                                     |
 | `.scripts/`                                       | Operation — role-session launchers                                                                                                                                        |
 | `.devcontainer/`                                  | Operation — the development container and its lifecycle scripts                                                                                                          |
-| `crates/host/`                                    | Source — the `claude-clipboard-host` binary that runs on the host                                                                                                         |
+| `crates/host/`                                    | Source — the `dclip` binary that runs on the host                                                                                                                         |
 | `bridge.py`, `test_bridge.py`                     | Source — the container-side `wl-paste`/`xclip` shim and its tests                                                                                                         |
 | `setup-host.sh`                                   | Source — the host installer                                                                                                                                               |
 | `.plan/`                                          | Record — `00-index.md` is the register; reviews go under `reviews/<round>/`                                                                                               |
@@ -205,6 +207,10 @@ What this document used to say, and what changed it.
 ### 2026-10-08 — §10 replaces a commit identifier found in a tracked file, and §6 names the exception
 
 §10 gained the paragraph that begins _"An identifier already in a tracked file is replaced where it stands"_. §6's withdrawal rule gained its second sentence. Before this change, §6 read: _"**A withdrawal inside an entry removes the text and carries it in a dated note.** Markdown strikethrough is not used anywhere in the record."_ Until then the two sections disagreed about an identifier already in the record: §10 forbade it, and §6 would have carried it into a note. `F-19` found the case, and `D-13` decided it.
+
+### 2026-10-09 — §5.2 names the product and limits naming a client
+
+Changed by `D-20`, when the product was renamed DClip. §5.2 was its first paragraph alone, and said nothing about the product's name or its clients.
 
 ### 2026-10-09 — §5.1's model comment states a constraint that holds
 

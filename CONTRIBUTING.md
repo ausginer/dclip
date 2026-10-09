@@ -10,7 +10,7 @@ The single source of truth for **how code is written here**: source conventions 
 
 Two programs and one protocol between them:
 
-- **`crates/host`** builds `claude-clipboard-host`, a static `x86_64-unknown-linux-musl` binary that runs on the Fedora host. It is the only party that touches the real clipboard: it serves image reads over a Unix socket and, with `--sync-text`, mirrors plain text into X11 on the host.
+- **`crates/host`** builds `dclip`, a static `x86_64-unknown-linux-musl` binary that runs on the Fedora host. It is the only party that touches the real clipboard: it serves image reads over a Unix socket and, with `--sync-text`, mirrors plain text into X11 on the host.
 - **`bridge.py`** is a stdlib-only Python shim that runs inside the devcontainer as `wl-paste` and `xclip`. It translates their arguments into a request and writes the image bytes it gets back.
 - **The protocol** is one JSON request line, then a JSON header line and the raw payload. Both ends ship together through `setup-host.sh`, so it has exactly one version.
 
@@ -213,7 +213,9 @@ The reverse is also a cost: **a generic instantiated over many types is many cop
 
 ## 4. Published values are governed by surface and permanence
 
-The bridge's published values are the protocol's fields and operations, the command-line flags and subcommands, the environment variables (`CLAUDE_CLIPBOARD_SOCKET`, `CLAUDE_CLIPBOARD_TRACE`), the install path and the mount point. Do not add one merely to give an internal value a name.
+The bridge's published values are the protocol's fields and operations, the command and its flags and subcommands, the environment variables (`DCLIP_SOCKET`, `DCLIP_TRACE`), the package name, the install paths and the mount points. Do not add one merely to give an internal value a name.
+
+**A published command, package or path carries `dclip`, and a published environment variable starts with `DCLIP_`.** A user then finds every value DClip asks them to write by one word. A file inside a directory that already carries the token need not repeat it, so the socket is `clipboard.sock`.
 
 - **(a) Surface.** Every published value is one more thing a user may believe they must understand, paid for in the README and in questions.
 - **(b) Permanence.** A value written into someone's compose file, devcontainer or `config.kdl` keeps arriving after the code stops meaning it. Removing it breaks their setup silently or loudly, and neither is free.
@@ -284,7 +286,7 @@ Do not introduce new work on the request path, an extra copy, avoidable allocati
 
 ## 15. Measure every meaningful change
 
-"This should be smaller" is not evidence. For meaningful changes record before/after measurements of the release musl binary, `target/x86_64-unknown-linux-musl/release/claude-clipboard-host`, which is where compiled size is actually observed. Where possible record the reason for the delta — branch removed, wrapper inlined, diagnostic string deleted, dependency edge removed, generic de-monomorphised.
+"This should be smaller" is not evidence. For meaningful changes record before/after measurements of the release musl binary, `target/x86_64-unknown-linux-musl/release/dclip`, which is where compiled size is actually observed. Where possible record the reason for the delta — branch removed, wrapper inlined, diagnostic string deleted, dependency edge removed, generic de-monomorphised.
 
 The instruments: `cargo bloat` for where the size went, `cargo llvm-lines` for monomorphisation, `cargo tree -e normal` at both ends of a change for the dependency edges the binary compiles, `cargo tree --duplicates` for one crate resolved at two versions, and the release binary's own size for the total. `--duplicates` answers duplication and nothing else: whether an edge was added is read from `-e normal`.
 
@@ -363,6 +365,14 @@ The target is not the smallest code we can write. The target is the **smallest r
 # Change record
 
 What this document used to say, and what changed it.
+
+### 2026-10-09 — §4 names DClip's values and the rule that names them
+
+Changed by `D-20`, when the product's published names became DClip's. §4's first paragraph read:
+
+> The bridge's published values are the protocol's fields and operations, the command-line flags and subcommands, the environment variables (`CLAUDE_CLIPBOARD_SOCKET`, `CLAUDE_CLIPBOARD_TRACE`), the install path and the mount point. Do not add one merely to give an internal value a name.
+
+It had no rule for how a published value is named.
 
 ### 2026-10-09 — §Language and platform names `lexopt`
 

@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "claude-clipboard-host"
+name = "dclip"
 path = "src/main.rs"
 
 [lints]

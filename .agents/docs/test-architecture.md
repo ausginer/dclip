@@ -6,7 +6,7 @@ Why the tests are shaped the way they are. The actionable rules — how a test i
 written, named and asserted — are in [`CONTRIBUTING.md`](../../CONTRIBUTING.md)
 §Tests; this document is the model behind them.
 
-The project is two programs and a protocol between them: `claude-clipboard-host`
+The project is two programs and a protocol between them: `dclip`
 (`crates/host`) on the host, and `bridge.py` in the container, posing as
 `wl-paste` and `xclip`. The host is the authority over what leaves the host
 clipboard — images only, read only, at most 64 MiB, to an allowed peer UID — and
@@ -30,7 +30,7 @@ layers it touches agree.
    and `cat`. They need nothing provisioned, so they run in the default
    `cargo test`.
 3. **Rust binary tests** — `crates/host/tests/`, over the built
-   `claude-clipboard-host` driven through what a user reaches: its arguments,
+   `dclip` driven through what a user reaches: its arguments,
    exit status, stderr, the socket and signals. Stand-in `wl-paste` and `xsel`
    scripts sit first on the child's `PATH`. They replace the Wayland session,
    not the bridge, so what these tests prove is the bridge's own lifecycle —

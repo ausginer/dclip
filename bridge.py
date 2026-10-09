@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent
 
 
 def socket_path():
-    return os.environ.get("CLAUDE_CLIPBOARD_SOCKET", str(ROOT / "clipboard.sock"))
+    return os.environ.get("DCLIP_SOCKET", str(ROOT / "clipboard.sock"))
 
 
 def request_host(request):
@@ -48,7 +48,7 @@ def request_host(request):
 
 
 def client(tool, args):
-    trace = os.environ.get("CLAUDE_CLIPBOARD_TRACE")
+    trace = os.environ.get("DCLIP_TRACE")
     if trace:
         with open(trace, "a", encoding="utf-8") as log:
             log.write(json.dumps({"tool": tool, "args": args}) + "\n")

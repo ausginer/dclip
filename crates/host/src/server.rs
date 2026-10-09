@@ -183,7 +183,7 @@ pub(crate) fn serve(options: &ServeOptions) -> Result<()> {
     let mut allowed = HashSet::from([uid, 0]);
     allowed.extend(&options.allow_uids);
     let executable = env::current_exe()?;
-    let path = env::var_os("CLAUDE_CLIPBOARD_SOCKET")
+    let path = env::var_os("DCLIP_SOCKET")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
             executable
