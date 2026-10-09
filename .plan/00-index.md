@@ -12,6 +12,7 @@ Entries are append-only and dated. A substantive amendment to a decision mints a
 | ------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
 | Host initial refactoring, opened 2026-10-06            | [`host/initial-refactoring/`](host/initial-refactoring/README.md) — analysis, alternatives, plan, journal |
 | Review round `host-initial-refactoring-r1`, 2026-10-07 | [`reviews/host-initial-refactoring-r1/`](reviews/host-initial-refactoring-r1/host-initial-refactoring-r1-summary.md) — four pass reports and their consolidation |
+| Review round `host-initial-refactoring-r2`, 2026-10-09 | [`reviews/host-initial-refactoring-r2/`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) — four pass reports and their consolidation |
 
 ---
 
@@ -692,6 +693,88 @@ Required property: the error type's bounds are no wider than some caller needs.
 `should_refuse_handle_stdio_as_an_unpublished_invocation` asserts the same behaviour as `should_print_usage_and_exit_1_for_an_unpublished_invocation`, and its clipboard stand-in plays no part in its assertion. `D-9` §Implemented and plan step 7 name it as `D-9`'s witness, so whether it should stay is a question about `D-9`.
 
 Required property: the refusal of unknown invocations is pinned where the record requires it, and no test carries setup its assertion does not depend on.
+
+#### F-25 — A refusal is lost when the peer's send lands after the bridge closes, and the shim sends first
+
+2026-10-09 · Tier A · Open · Routed to the architect (`D-11`; host or shim) · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`reviewer-1`, `integrity-1`, `cleanup-2`)
+
+`serve` writes a refusal and closes the stream with the request unread. This happens for a refused UID, for the concurrency limit, for the other refusals in the accept loop, and for a request turned away at shutdown with `bridge is shutting down`. `bridge.py`'s `request_host` sends with `sendall` before it reads anything. If the close comes first, the send fails with `EPIPE`, and the shim prints `wl-paste: [Errno 32] Broken pipe` without reading the refusal already waiting in its receive queue.
+
+With the real shim, 1 of 118 refusals was lost on an idle machine and 22 of 39 under CPU load. The refusal's bytes always arrive before any reset. The journal's account, that the reset comes on the read and only under parallel load, is wrong about the mechanism. The behaviour predates the branch.
+
+Required property: a peer that is refused, or turned away at shutdown, learns why, whether its request reaches the host before or after the host closes — or the record states that a refusal may surface as a broken connection.
+
+#### F-26 — The termination-signal binary test fails a correct bridge when the runner inherited an ignored signal
+
+2026-10-09 · Tier B · Open · Routed to the architect (`D-2`, `D-11`) · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`der-1`, `reviewer-2`, `integrity-3`)
+
+`should_remove_the_socket_and_exit_0_on_a_termination_signal` expects SIGTERM, SIGINT and SIGHUP each to end `serve`. That is `D-7`'s unconditional property. `serve` inherits the runner's signal dispositions and, as `D-11` requires, keeps any that were ignored. Under `trap '' HUP`, under `trap '' INT`, or as a background job of a non-interactive shell, the test fails after 10 s with `serve did not exit`, and the message names no cause.
+
+Required property: the binary layer's verdict on signal handling does not depend on the dispositions its runner inherited, or the precondition is stated and its failure names it.
+
+#### F-27 — Two of `D-11`'s shutdown-ordering properties have no witness
+
+2026-10-09 · Tier B · Open · Routed to the implementer · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`integrity-2`)
+
+Each of two mutations passes all 19 binary tests: dropping `bridge` after the scope instead of inside it, and releasing the lock before the join. `D-11` requires both that "the bridge stops advertising before any worker is joined" and that "the lock is released last". `README.md` lists the first among what the binary tests cover.
+
+Required property: each shutdown-ordering property the register states can be falsified by a test that fails when the order is reversed, or the record says it is held by construction only.
+
+#### F-28 — The concurrency test's retry gives the wrong mechanism and tolerates any I/O error
+
+2026-10-09 · Tier C · Open · Routed to the implementer, after `F-25` is ruled · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`reviewer-3`, `der-3`, `cleanup-2`)
+
+The retry's comment in `should_refuse_a_connection_over_the_limit_and_keep_serving` says a refused connection "can reset it before the refusal is read". In fact an exchange fails in one of two ways. The send fails with `EPIPE`, or `read_to_end` hits `ECONNRESET` after it has already received the refusal. The loop retries every I/O error.
+
+Required property: the retry tolerates the failures that actually occur, and no others, and its comment states them as they occur.
+
+#### F-29 — The accept loop's retries rest on a TCP premise, and the `WouldBlock` arm's real job is unstated
+
+2026-10-09 · Tier C · Open · Routed to the architect (`D-11`) · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`der-2`)
+
+`D-11` and the code say `WouldBlock` is retried because "a connection that vanished" took the readiness. On Linux `AF_UNIX`, a vanished peer is still accepted: 600 of 600 times across three ways of leaving. No evidence was found that `ConnectionAborted` can occur. The `WouldBlock` arm does carry a different load, which nothing states. A signal interrupts `poll`, the loop falls through to an `accept` that returns `EAGAIN`, and that arm sends it back to `poll`. Without the arm, an idle bridge exits 1 on SIGTERM, 20 of 20 times.
+
+Required property: each retry arm, and `D-11`'s statement of it, names a failure that a non-blocking `AF_UNIX` listener in this process can actually meet, and the dependency of a clean exit on a signal is stated where it is enforced.
+
+#### F-30 — Only SIGHUP's inherited ignore is witnessed, and `README.md` names it as the only exception
+
+2026-10-09 · Tier C · Open · Routed to the implementer · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`integrity-4`)
+
+`D-11` keeps an inherited ignore for all three signals. The only test ignores SIGHUP, and a mutation that honours the rule for SIGHUP alone passes. `README.md` step 2 says Ctrl+C or SIGTERM stops the bridge, and gives SIGHUP as the only inherited exception.
+
+Required property: the README's account of when the bridge keeps running agrees with `D-11` for each signal, and a coverage claim is backed for each signal it covers.
+
+#### F-31 — `serve_ignoring` takes parameters its only caller fixes
+
+2026-10-09 · Tier C · Open · Routed to the implementer, with `F-30` · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`cleanup-3`)
+
+`Scratch::serve_ignoring(signal, args)` has one caller, which passes `"HUP"` and `&[]`.
+
+Required property: the helper's parameters match what the suite varies, or the suite varies them.
+
+#### F-32 — `documentation.md` §5.1's model comment states a constraint `D-4` removed
+
+2026-10-09 · Tier C · Open · Routed to the owner of `documentation.md` · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`der-4`)
+
+The model of a working comment is "the child is killed before the stdin writer is joined". `D-4` §Adjudicated found that constraint insufficient, and §Remediated removed the writer thread.
+
+Required property: the document's examples of a working comment state constraints that hold, or are plainly illustrations that do not depend on the tree.
+
+#### F-33 — The folder README's status still says phase 5 is next
+
+2026-10-09 · Tier C · Open · Routed to the record owner · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`integrity-5`)
+
+The Status line of [`host/initial-refactoring/README.md`](host/initial-refactoring/README.md) says "Next: phase 5 of the plan". The journal and the register record phase 5 as done.
+
+Required property: the folder README's status names the state the journal and the register record.
+
+#### F-34 — `set_x11_text` takes an owned `Vec<u8>` that nothing consumes
+
+2026-10-09 · Tier C · Open · Routed to the implementer · Review [`host-initial-refactoring-r2`](reviews/host-initial-refactoring-r2/host-initial-refactoring-r2-summary.md) (`cleanup-1`)
+
+`capture` now borrows its input. `clipboard::set_x11_text`, and the seam in `sync.rs` that calls it, still take ownership.
+
+Required property: each parameter's type states what the function does with the value.
 
 ---
 
