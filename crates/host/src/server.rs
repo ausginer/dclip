@@ -183,14 +183,25 @@ pub(crate) fn serve(options: &ServeOptions) -> Result<()> {
     let mut allowed = HashSet::from([uid, 0]);
     allowed.extend(&options.allow_uids);
     let executable = env::current_exe()?;
-    let path = env::var_os("DCLIP_SOCKET")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            executable
-                .parent()
-                .unwrap_or(Path::new("."))
-                .join("clipboard.sock")
-        });
+    let path = match env::var_os("DCLIP_SOCKET") {
+        Some(path) => PathBuf::from(path),
+        None => {
+            let home = env::var_os("HOME")
+                .filter(|home| !home.is_empty())
+                .ok_or("neither DCLIP_SOCKET nor HOME is set")?;
+            let directory = Path::new(&home).join(".local/share/dclip");
+            fs::create_dir_all(Path::new(&home).join(".local/share"))?;
+            // A container UID allowed by `--allow-uid` reaches the socket
+            // through this directory, so one created here is 0755 whatever
+            // the umask. One that exists keeps the mode its owner gave it.
+            match fs::DirBuilder::new().create(&directory) {
+                Ok(()) => fs::set_permissions(&directory, fs::Permissions::from_mode(0o755))?,
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+                Err(error) => return Err(error.into()),
+            }
+            directory.join("clipboard.sock")
+        }
+    };
     let lock = fs::OpenOptions::new()
         .read(true)
         .write(true)

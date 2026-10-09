@@ -1,8 +1,12 @@
-use crate::support::{PATIENCE, Scratch, await_pid, read_framed, read_response, running};
+use crate::support::{PATIENCE, Scratch, Socket, await_pid, read_framed, read_response, running};
 use std::{
     fs,
     io::Write,
-    os::unix::net::{UnixListener, UnixStream},
+    os::unix::{
+        fs::PermissionsExt,
+        net::{UnixListener, UnixStream},
+    },
+    path::Path,
     thread,
     time::{Duration, Instant},
 };
@@ -242,5 +246,39 @@ fn should_refuse_a_connection_over_the_limit_and_keep_serving() {
         );
         assert!(Instant::now() < deadline, "no place came free");
         thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn should_bind_the_default_socket_in_a_directory_it_creates_at_0755() {
+    let scratch = Scratch::new();
+    scratch.clipboard(b"", b"");
+    let home = scratch.path("home");
+    let directory = home.join(".local/share/dclip");
+    let mut server = scratch.serve_at_default(&home);
+    assert!(
+        directory.join("clipboard.sock").exists(),
+        "no default socket"
+    );
+    assert_eq!(
+        fs::metadata(&directory).unwrap().permissions().mode() & 0o777,
+        0o755
+    );
+    server.signal("TERM");
+    assert_eq!(server.wait().code(), Some(0));
+    assert!(!directory.join("clipboard.sock").exists());
+}
+
+#[test]
+fn should_exit_1_naming_both_variables_without_home_or_a_socket_override() {
+    let scratch = Scratch::new();
+    for home in [None, Some(Path::new(""))] {
+        let output = scratch.run_with(Socket::Default(home), &["serve"]);
+        assert_eq!(output.status.code(), Some(1), "HOME {home:?}");
+        assert_eq!(
+            String::from_utf8_lossy(&output.stderr),
+            "dclip: neither DCLIP_SOCKET nor HOME is set\n",
+            "HOME {home:?}"
+        );
     }
 }

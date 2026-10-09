@@ -138,9 +138,12 @@ Expect `/opt/dclip/bin/wl-paste` and `/opt/dclip/bin/xclip`.
 To make it permanent, add the export to the container user's shell
 configuration, or set PATH through the image, Compose or devcontainer settings.
 
-The socket path is derived from the mounted directory. It can be overridden with
-`DCLIP_SOCKET` on both sides. There is no need to set a dummy
-`DISPLAY` or `WAYLAND_DISPLAY`.
+On the host, `serve` puts its socket at
+`$HOME/.local/share/dclip/clipboard.sock`, wherever the binary is, and creates
+that directory if it does not exist. In the container, the wrappers find the
+socket beside themselves, in the mounted directory. `DCLIP_SOCKET` overrides
+the path on either side. There is no need to set a dummy `DISPLAY` or
+`WAYLAND_DISPLAY`.
 
 ## 5. Check pasting
 

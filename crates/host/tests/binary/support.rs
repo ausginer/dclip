@@ -27,6 +27,16 @@ pub const BINARY: &str = env!("CARGO_BIN_EXE_dclip");
 /// reach promptly. Generous, because a loaded machine runs tests in parallel.
 pub const PATIENCE: Duration = Duration::from_secs(10);
 
+/// Where the binary is told to put its socket.
+#[derive(Clone, Copy)]
+pub enum Socket<'a> {
+    /// `DCLIP_SOCKET` names the scratch directory's socket.
+    Override,
+    /// No `DCLIP_SOCKET`, `HOME` as given or unset, and umask 077, so that
+    /// `serve` falls back to its default under `HOME`.
+    Default(Option<&'a Path>),
+}
+
 /// A directory of the test's own, removed on drop. It lives under the system
 /// temporary directory rather than the target directory, so the socket path
 /// stays inside the 107-byte `sun_path` limit wherever the checkout is.
@@ -95,8 +105,14 @@ esac"#,
     /// runner inherited, apart from `ignored`, which begins ignored. The bridge
     /// keeps a disposition it inherited as ignored, so without this a runner
     /// under `nohup` would fail a correct bridge. A POSIX shell cannot restore
-    /// an inherited ignore; `env` can from coreutils 8.31 on.
-    fn command(&self, ignored: Option<&str>, args: &[impl AsRef<OsStr>]) -> Command {
+    /// an inherited ignore; `env` can from coreutils 8.31 on. A shell started
+    /// by `env` to set the umask passes the restored dispositions on.
+    fn command(
+        &self,
+        ignored: Option<&str>,
+        socket: Socket,
+        args: &[impl AsRef<OsStr>],
+    ) -> Command {
         let restored = ["TERM", "INT", "HUP"]
             .into_iter()
             .filter(|signal| Some(*signal) != ignored)
@@ -112,11 +128,24 @@ esac"#,
             path.push(":");
             path.push(inherited);
         }
+        match socket {
+            Socket::Override => {
+                command.env("DCLIP_SOCKET", self.socket());
+            }
+            Socket::Default(home) => {
+                command
+                    .args(["/bin/sh", "-c", r#"umask 077 && exec "$0" "$@""#])
+                    .env_remove("DCLIP_SOCKET");
+                match home {
+                    Some(home) => command.env("HOME", home),
+                    None => command.env_remove("HOME"),
+                };
+            }
+        }
         command
             .arg(BINARY)
             .args(args)
             .env("PATH", path)
-            .env("DCLIP_SOCKET", self.socket())
             .env_remove("CLIPBOARD_STATE");
         command
     }
@@ -126,8 +155,14 @@ esac"#,
     /// fails the test rather than hanging it. An argument is an OS string, so
     /// a row can carry bytes that are not UTF-8.
     pub fn run(&self, args: &[impl AsRef<OsStr>]) -> Output {
+        self.run_with(Socket::Override, args)
+    }
+
+    /// Runs the binary to completion as [`Scratch::run`] does, told where to
+    /// put its socket by `socket`.
+    pub fn run_with(&self, socket: Socket, args: &[impl AsRef<OsStr>]) -> Output {
         let child = self
-            .command(None, args)
+            .command(None, socket, args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -160,16 +195,32 @@ esac"#,
     /// Starts `serve` and returns once it has announced itself, which it does
     /// after the socket is bound and its signal handlers are installed.
     pub fn serve(&self, args: &[&str]) -> Server {
-        self.start(self.command(None, &[&["serve"], args].concat()))
+        self.start(
+            self.command(None, Socket::Override, &[&["serve"], args].concat()),
+            self.socket(),
+        )
+    }
+
+    /// Starts `serve` as [`Scratch::serve`] does, but with no `DCLIP_SOCKET`,
+    /// `HOME` at `home` and umask 077, and returns once it has announced
+    /// itself at its default socket under `home`.
+    pub fn serve_at_default(&self, home: &Path) -> Server {
+        self.start(
+            self.command(None, Socket::Default(Some(home)), &["serve"]),
+            home.join(".local/share/dclip/clipboard.sock"),
+        )
     }
 
     /// Starts `serve` as [`Scratch::serve`] does, but with `signal` ignored
     /// when it starts, the way `nohup` starts a program with SIGHUP ignored.
     pub fn serve_ignoring(&self, signal: &str) -> Server {
-        self.start(self.command(Some(signal), &["serve"]))
+        self.start(
+            self.command(Some(signal), Socket::Override, &["serve"]),
+            self.socket(),
+        )
     }
 
-    fn start(&self, mut command: Command) -> Server {
+    fn start(&self, mut command: Command, socket: PathBuf) -> Server {
         let mut child = command
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -179,7 +230,7 @@ esac"#,
         let stdout = child.stdout.take().unwrap();
         let mut server = Server {
             child: Running(child),
-            socket: self.socket(),
+            socket,
         };
         // Read on a thread of its own, so that a `serve` that neither
         // announces itself nor exits fails the test instead of hanging it.
