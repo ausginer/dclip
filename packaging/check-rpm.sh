@@ -104,11 +104,11 @@ useradd --create-home tester
 home=/home/tester
 data=$home/.local/share/dclip
 expect_gone "the user has no DClip data directory before serve" "$data"
-as_tester() {
-    setpriv --reuid=tester --regid=tester --init-groups \
-        env -i HOME="$home" PATH=/usr/bin:/bin "$@"
-}
-as_tester /usr/bin/dclip serve >/tmp/serve.out 2>/tmp/serve.err &
+# A command array rather than a function, so that the background job below
+# execs into serve and $! is serve's own PID.
+as_tester=(setpriv --reuid=tester --regid=tester --init-groups
+    env -i HOME="$home" PATH=/usr/bin:/bin)
+"${as_tester[@]}" /usr/bin/dclip serve >/tmp/serve.out 2>/tmp/serve.err &
 serve=$!
 for _ in $(seq 100); do
     [[ -S $data/clipboard.sock ]] && break
@@ -118,7 +118,7 @@ done
 [[ -S $data/clipboard.sock ]] || fail "serve bound no socket at $data/clipboard.sock"
 pass "serve creates the data directory and binds its socket there"
 expect "serve creates the data directory at mode 755" "755" "$(stat -c %a "$data")"
-listing=$( (as_tester DCLIP_SOCKET="$data/clipboard.sock" /usr/share/dclip/bin/wl-paste --list-types 2>&1; echo "status $?") || true)
+listing=$( ("${as_tester[@]}" DCLIP_SOCKET="$data/clipboard.sock" /usr/share/dclip/bin/wl-paste --list-types 2>&1; echo "status $?") || true)
 expect "the packaged wl-paste reaches serve, which reports its own error for the missing Wayland session" \
     "wl-paste: wl-paste failed; check it on Fedora
 status 1" "$listing"
