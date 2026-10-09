@@ -74,3 +74,39 @@ A dated log of this work: what was done, what was found, what is waiting. Newest
 **The rename to DClip, the same session.** The owner renamed the product DClip. `NOTICE` and `README.md`'s title say so. The published names that carry `claude` are an architectural question, because `D-17` and `D-18` fix some of them, so they are registered as `Q-3` for the architect. Stage 2 waits on it, so that the packages are first built under their final names.
 
 **Waiting:** `Q-3`, by an `architect` session; then stage 2, by an `implementer` session.
+
+## 2026-10-09 — `Q-3`: the names (architect)
+
+**Session.** Architect role on branch `host/initial-refactoring`. `Effort guard active` was present at start. The request: settle `Q-3` with DClip as the product name, and plan a consistent rename of the unreleased published names. Update the affected decisions and the stage-2 handoff, and tell product naming apart from client-specific documentation. No compatibility aliases. `Q-1` stays out of scope.
+
+**Read.**
+
+- `Q-2`, `Q-3`, `D-2`, `D-8`, `D-9`, `D-12`, `D-13`, `D-15`–`D-19`, and this folder's plan, alternatives and journal.
+- `CONTRIBUTING.md` §What is being written, §4 and §8.
+- `documentation.md` §1, §5.2, §6 and §8, and `handoff.md`.
+- Every tracked mention of `claude`, `CLAUDE` and `host-clipboard`.
+- `README.md`, `setup-host.sh`, both manifests, and the head of `bridge.py`.
+- How `clipboard::watch` names the binary: through `current_exe`, so the watcher does not depend on the name.
+
+**Decided.**
+
+- `D-20` answers `Q-3`. The token is `dclip`, environment variables start with `DCLIP_`, and the binary is `dclip`. The mount points become `/opt/dclip` and `/run/dclip`. There are no aliases.
+- `D-21`–`D-23` supersede `D-17`–`D-19` by restating them under those names, because a changed path is a substantive amendment (`documentation.md` §6). `D-22` also carries `Q-2` §Answer's license properties in place of `D-18`'s condition, and `D-23`'s install checks assert them.
+- The plan gains step 2.0, the rename: one commit, host and shim together, before anything is built.
+- `D-20` tells apart three kinds of `claude`:
+  - the product's names, which are renamed;
+  - Claude Code as the client, named where its behaviour is the subject;
+  - the agent harness, which is not touched.
+
+  `CONTRIBUTING.md` §4 and `documentation.md` §5.2 gain the two rules in step 2.0, with change records.
+
+**Judgement calls an owner may want to revisit:**
+
+- **The binary is `dclip`, not `dclip-host`** ([`decisions.md`](decisions.md) §The names).
+- **The mount points are renamed** although they never carried `claude`. This one is narrow, and keeping `/opt/host-clipboard` and `/run/host-clipboard` would change nothing else.
+- **The README's title becomes client-neutral.** The owner wrote it with "Claude CLI" in it. `D-20` moves Claude Code into the opening, as the client DClip was written for.
+- **The repository and the Cargo package `devcontainer-clipboard-host` keep their names.**
+
+**Noticed, not decided.** `Q-2` §Answer owes a `License` tag in the `.rpm` and a copyright file in the `.deb`, and `D-22` carries exactly that. Neither package is required to ship `LICENSE` or `NOTICE` as files. Apache-2.0 §4(a) and §4(d) ask a redistributor to pass both on, and Fedora's packaging guidelines expect `%license` for the license text. This was outside the request, so `D-22` does not add it. It is the owner's to raise before stage 2's step 2.4.
+
+**Waiting:** stage 2 from step 2.0, by an `implementer` session; then the owner's Fedora check and round r3.

@@ -645,7 +645,7 @@ Required properties:
 
 #### D-17 — `serve`'s default socket is in the user's data directory, wherever the binary is
 
-2026-10-09 · Accepted · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 2
+2026-10-09 · Accepted · **Superseded 2026-10-09 by `D-21`** · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 2
 
 Without `CLAUDE_CLIPBOARD_SOCKET`, `server::serve` puts the socket and its lock beside the executable. That works only because `setup-host.sh` installs the binary into `$HOME/.local/share/claude-clipboard`, which the user can write to. A packaged binary lives in `/usr/bin` (`D-18`), and there opening the lock fails with a permission error before anything else happens.
 
@@ -663,7 +663,7 @@ Required properties:
 
 #### D-18 — The `claude-clipboard` packages carry the host binary and the container shim, and require only `wl-clipboard`
 
-2026-10-09 · Accepted · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 2
+2026-10-09 · Accepted · **Superseded 2026-10-09 by `D-22`** · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 2
 
 The owner asked for installable x86_64 `.deb` and `.rpm` packages that carry the container shim, declare the runtime dependencies, and need no development tools and no Python on the host. The host binary is static musl, so it needs no C library. It runs `wl-paste` for every request and `xsel` only for `--sync-text`. The shim runs only in the container, so Python is a property of the container, never of the host.
 
@@ -698,7 +698,7 @@ Required properties:
 
 #### D-19 — One Docker build runs every gate and makes every product, and the workflow only invokes it
 
-2026-10-09 · Accepted · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 2
+2026-10-09 · Accepted · **Superseded 2026-10-09 by `D-23`** · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 2
 
 `crates/host/Dockerfile` tests and builds the binary, and it has never been run: the devcontainer has no Docker CLI, and the journal has said so since phase 1. [`test-architecture.md`](../.agents/docs/test-architecture.md) §CI policy already names the gate that CI must run once it exists. The owner asked for GitHub Actions that produce the packages, check that they install and remove, and validate the Docker builder. Building no host tooling means that the packages, and every check on them, come from Docker alone.
 
@@ -743,6 +743,171 @@ Required properties:
   - [`documentation.md`](../.agents/docs/documentation.md) §8 and `AGENTS.md` §Where things are name the Dockerfile, the packaging directory and the workflow;
   - `README.md` gives the build commands and the package install.
 - **Evidence:** `D-19` §Implemented names the workflow run on the pushed head of the branch, by its run number, in which every job passed. The Docker CLI is absent from the devcontainer, so that run is the validation of the builder.
+
+#### D-20 — DClip's published names carry `dclip`, and a client is named only where its behaviour is the subject
+
+2026-10-09 · Accepted · Answers `Q-3` · Amends `CONTRIBUTING.md` §4 and `.agents/docs/documentation.md` §5.2 · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 2
+
+The owner renamed the product DClip, short for `devcontainer-clipboard`, because the bridge is not tied to Claude. Every value `CONTRIBUTING.md` §4 publishes still says `claude`. Nothing is released, so renaming those values now costs edits and nothing else, and §8 owes no alias for the old ones. Once stage 2 publishes packages, each value is in someone's compose file, `config.kdl` or package database, and a rename becomes a migration. So all of them are renamed now, in one change, before anything is built under the old names. The owner ruled out compatibility aliases.
+
+**One token.** The token is `dclip`, the product's name in lower case. Every published command, package and path carries it, and every published environment variable starts with `DCLIP_`. A user then finds every value DClip asks them to write by one word, in their own files and in the README. The container's mount points, `/opt/host-clipboard` and `/run/host-clipboard`, never carried the old name. They are renamed too, because a user writes them in the same line as the host directory they mount, and this is the last time renaming them is free.
+
+**The binary is `dclip`.** It is the only DClip command anyone types, and it runs only on the host. In the container, DClip answers as `wl-paste` and `xclip` and has no command of its own. A package conventionally installs a command of its own name. The suffix `-host` set the binary apart from nothing a user runs. A web search on 2026-10-09 found no package named `dclip` in Fedora, Debian or Ubuntu, and no `dclip` command.
+
+**Three kinds of `claude` live in this repository, and only one is the product's name:**
+
+- **The product's published names** are what this decision renames.
+- **Claude Code is a client.** The bridge was written for it. It is the client whose paste path the shim follows and the one the end-to-end check pastes into. Where Claude Code's behaviour is the subject, the text names it: how to check a paste in it, how it calls the tools, its own issues. Text that describes DClip does not name it. The shim serves any program that reads images through the `wl-paste` and `xclip` forms it accepts, but only Claude Code is the target, so the README claims no other client.
+- **The agent harness is development tooling:** `.claude/`, `.claude-plugin/`, `CLAUDE.md`, `.scripts/claude-role.sh`, the `claude` commands in `AGENTS.md`, and the `CLAUDE_*` variables and `.claude` mounts in `.devcontainer/`. These names follow its vendor's conventions, and the harness finds its files by them. They are neither the product's names nor client documentation, and nothing here renames them.
+
+**Implemented decisions keep their text.** `D-2` locates the binary with `env!("CARGO_BIN_EXE_claude-clipboard-host")`. The property is the mechanism, Cargo's variable for the binary, and the name inside it is the binary's name, which this decision sets. The binary tests of `D-12` and `D-16` assert stderr with the program's name as a prefix, and the usage line names the program. Neither decision fixes that name, and no row of either table contains it. So the literals follow the rename and the rows stay as they are. That reading changes nothing either decision requires, so it is not an amendment of either (`documentation.md` §6). The record's findings, investigations, journals, review reports and implemented decisions describe the tree as it was when they were written, and they are not rewritten.
+
+Required properties:
+
+- **The names, exactly:**
+
+  | Value | Was | Is |
+  | --- | --- | --- |
+  | Binary, and the command | `claude-clipboard-host` | `dclip` |
+  | Socket override | `CLAUDE_CLIPBOARD_SOCKET` | `DCLIP_SOCKET` |
+  | Trace log | `CLAUDE_CLIPBOARD_TRACE` | `DCLIP_TRACE` |
+  | Host data directory, the `setup-host.sh` install and the default socket's directory | `$HOME/.local/share/claude-clipboard` | `$HOME/.local/share/dclip` |
+  | Package | `claude-clipboard` | `dclip` |
+  | Package's shim directory | `/usr/share/claude-clipboard` | `/usr/share/dclip` |
+  | Container mount of the shim | `/opt/host-clipboard` | `/opt/dclip` |
+  | Container mount of the socket, in a package install | `/run/host-clipboard` | `/run/dclip` |
+
+  The binary's build path and its Docker export follow: `target/x86_64-unknown-linux-musl/release/dclip` and `dist/dclip`. `setup-host.sh` installs `$HOME/.local/share/dclip/dclip`. The README's example trace file is `/tmp/dclip-trace.log`.
+- **Not renamed:**
+  - the socket and lock file names, `clipboard.sock` and `clipboard.lock`, which sit in a directory that already carries the token;
+  - `bridge.py`, its `bin/wl-paste` and `bin/xclip` links, and its `--version` and `--help` text, none of which carries the old name;
+  - the Cargo package `devcontainer-clipboard-host`, which is unpublished, and the repository's name;
+  - the workspace version;
+  - the agent harness, as listed above.
+- **No alias, fallback or mention of an old name** in code, tests, scripts or user documentation. Neither side reads an old environment variable, and nothing installs, links or creates an old path. The host and the shim change together, in one commit (`CONTRIBUTING.md` §8). No test pins that an old name is refused: a removed name is deleted, not made into contract.
+- **`D-12`'s and `D-16`'s rows are unchanged.** Only the program-name prefix and the usage line that the binary tests assert change, to `dclip: ` and `Usage: dclip serve [--sync-text] [--allow-uid UID]`. `D-2`'s binary tests locate the binary with `env!("CARGO_BIN_EXE_dclip")`.
+- **`CONTRIBUTING.md` §4** lists the new environment variables, and states the rule: a published command, package or path carries `dclip`, and a published environment variable starts with `DCLIP_`. A file inside a directory that already carries the token need not repeat it. Its change record carries the sentence this replaces.
+- **`documentation.md` §5.2** states the rule for user-facing text: it calls the product DClip and describes it without naming a client. It names a client only where that client's behaviour is the subject. §9 records the amendment.
+- **`README.md`:**
+  - its title and opening describe DClip without naming a client;
+  - the opening says what DClip serves, the `wl-paste` and `xclip` image reads the shim accepts, and that it was written for Claude Code;
+  - it claims no other client;
+  - the part of the paste check that runs in Claude Code is introduced as Claude Code's, and the client-neutral check comes before it;
+  - the Sources list keeps Claude Code's documentation and issues as that client's;
+  - every published value uses the new names.
+- **The other current-state documents follow the names in the same commit:** `CONTRIBUTING.md` §What is being written and §15, `AGENTS.md` §Where things are, `documentation.md` §5 and §8, and `test-architecture.md`. Their mentions of Claude Code as a component the project does not own are client documentation, and they stay.
+- **Witness:** at the head of the change, `git grep -nE 'claude-clipboard|CLAUDE_CLIPBOARD|host-clipboard'` matches only under `.plan/`. The gates in `handoff.md` pass, including the Python suite, and `bash -n setup-host.sh` passes.
+
+#### D-21 — `serve`'s default socket is in `$HOME/.local/share/dclip`, wherever the binary is
+
+2026-10-09 · Accepted · Supersedes `D-17` · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 2
+
+`D-17` stands with `D-20`'s names. This entry restates it, so that the contract can still be read from one entry.
+
+Without `DCLIP_SOCKET`, `server::serve` puts the socket and its lock beside the executable. That works only because `setup-host.sh` installs the binary into `$HOME/.local/share/dclip`, which the user can write to. A packaged binary lives in `/usr/bin` (`D-22`), and there opening the lock fails with a permission error before anything else happens.
+
+The directory `setup-host.sh` already uses becomes the default for every install. For an install made by `setup-host.sh`, nothing changes. A binary run from `dist/` or `target/` now puts its socket in the home directory instead of beside itself. Nothing is released, so no compatibility is owed for that (`CONTRIBUTING.md` §8). On a fresh package install the directory does not exist yet, and `serve` is the only thing the user runs, so `serve` creates it.
+
+Required properties:
+
+- **Without `DCLIP_SOCKET`, the socket is `$HOME/.local/share/dclip/clipboard.sock`,** with the lock beside it as today, whatever the executable's location.
+- **If that directory does not exist, `serve` creates it, and its parents with it.** The directory `serve` creates is mode 0755 whatever the umask, because a container UID allowed by `--allow-uid` has to be able to reach the socket. An existing directory's mode is left alone.
+- **With `DCLIP_SOCKET` set, behaviour is unchanged,** and no directory is created.
+- **With `HOME` unset or empty and no override, `serve` exits 1** with one line naming both variables.
+- **The shim's resolution of the socket is unchanged.**
+- **Witness:** a binary test runs `serve` with `HOME` in its scratch directory, no `DCLIP_SOCKET`, and umask 077. It finds the socket at the default path, and the created directory at mode 0755. Before the change it fails, because the socket is beside the test binary.
+- **`README.md`** says where the host's socket is, and the autostart line works for both installs.
+
+#### D-22 — The `dclip` packages carry the host binary and the container shim, and require only `wl-clipboard`
+
+2026-10-09 · Accepted · Supersedes `D-18` · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 2
+
+`D-18` stands with `D-20`'s names. Its condition on a license is met: the owner chose Apache-2.0 (`Q-2` §Answer), so the license properties that answer owes are written here. This entry restates `D-18` with both changes, so that the packaging contract can still be read from one entry.
+
+The owner asked for installable x86_64 `.deb` and `.rpm` packages that carry the container shim, declare the runtime dependencies, and need no development tools and no Python on the host. The host binary is static musl, so it needs no C library. It runs `wl-paste` for every request and `xsel` only for `--sync-text`. The shim runs only in the container, so Python is a property of the container, never of the host.
+
+A package cannot write into a home directory, so the files it installs and the socket now live apart: the shim under `/usr/share`, root-owned, and the socket in the user's directory (`D-21`). A container therefore mounts two directories where a `setup-host.sh` install mounts one. The package's directory is mounted without relabelling, because `z` would relabel files the package owns, and the package database and `restorecon` would then disagree with the mount. Whether a container under enforcing SELinux may execute the shim from a `usr_t` path has not been observed. A 2016 note by the policy's author says the container domain may read and execute most of `/usr`. A Fedora report shows `entrypoint` refused for a `usr_t` script, but in that report the script was the container's entrypoint, which the shim never is. This is settled by observation on Fedora before the README claims it.
+
+`setup-host.sh` stays as the install from source, and its one-mount layout is unchanged.
+
+Required properties:
+
+- **Two packages per build, from one manifest:** a `.deb` for `amd64` and an `.rpm` for `x86_64`. Both are named `dclip`, and both carry the workspace version. The rpm release is `1`. Both formats come from the one manifest, so they carry the same files.
+- **Contents, exactly:**
+  - `/usr/bin/dclip`, mode 0755: the release musl binary of the same build whose tests passed (`D-23`);
+  - `/usr/share/dclip/bridge.py`, mode 0755, byte-identical to the tracked `bridge.py`, shebang included;
+  - `/usr/share/dclip/bin/wl-paste` and `/usr/share/dclip/bin/xclip`, each a relative symlink to `../bridge.py`;
+  - `README.md` as the package's documentation, at the format's documentation path for the package;
+  - in the `.deb`, `/usr/share/doc/dclip/copyright`, below;
+  - the package owns `/usr/share/dclip` and its `bin`, so that removing the package removes them.
+- **The license is `Apache-2.0`,** the workspace manifest's value, set once in the packaging manifest:
+  - the `.rpm`'s `License` tag is `Apache-2.0`;
+  - the `.deb`'s `/usr/share/doc/dclip/copyright` names `Apache-2.0`, and its `Copyright:` field is `NOTICE`'s copyright line.
+- **Dependencies, exactly:** it requires `wl-clipboard` and recommends `xsel`. Nothing else is declared or generated:
+  - no Python;
+  - no C library;
+  - no interpreter dependency derived from the shim's shebang;
+  - no build tool.
+
+  The format's own `rpmlib(…)` capabilities are not dependencies in this sense.
+- **No maintainer scripts.** Installing starts, enables and configures nothing.
+- **The container side of a package install,** published under `CONTRIBUTING.md` §4:
+  - `/usr/share/dclip` is mounted at `/opt/dclip`, read-only, and never with `z` or `Z`;
+  - `$HOME/.local/share/dclip` is mounted at `/run/dclip`, read-only, with `z`;
+  - the container sets `DCLIP_SOCKET=/run/dclip/clipboard.sock`;
+  - `PATH` gains `/opt/dclip/bin`, as in a `setup-host.sh` install.
+- **`README.md`** gives the package install and its layout, and keeps `setup-host.sh` with its one-mount layout. It does not say that the package layout works under enforcing SELinux until the owner's Fedora check has shown it. If the check shows a denial, it goes to the architect with its AVC record. Neither `/usr/share/dclip` nor the host's policy is relabelled to work around it.
+
+#### D-23 — One Docker build runs every gate and makes every product, and the workflow only invokes it
+
+2026-10-09 · Accepted · Supersedes `D-19` · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 2
+
+`D-19` stands with `D-20`'s names, and its install checks also assert the license that `D-22` now carries. This entry restates it, so that the builder's contract can still be read from one entry.
+
+`crates/host/Dockerfile` tests and builds the binary, and it has never been run: the devcontainer has no Docker CLI, and the journal has said so since phase 1. [`test-architecture.md`](../.agents/docs/test-architecture.md) §CI policy already names the gate that CI must run once it exists. The owner asked for GitHub Actions that produce the packages, check that they install and remove, and validate the Docker builder. Building no host tooling means that the packages, and every check on them, come from Docker alone.
+
+All of it is therefore one Docker build. The workflow is a thin caller, so that anyone with Docker reruns exactly what CI ran, and the Docker builder is validated because it is the only builder. Each image is pinned to an exact version, because a gate that fails on an upstream release teaches people to re-run it. The workflow uses no third-party action. GitHub's own actions are pinned to exact release tags rather than commit identifiers, which [`documentation.md`](../.agents/docs/documentation.md) §10 keeps out of tracked files.
+
+Required properties:
+
+- **One Dockerfile at the repository root replaces `crates/host/Dockerfile`.** `.dockerignore` admits exactly what its stages read.
+  - The README's build command still runs the musl tests and then exports `dist/dclip`.
+  - A documented target exports the `.deb` and the `.rpm` into `dist/`.
+- **Every image is pinned to an exact version:** the Rust toolchain, Python, Node, the packaging tool, Fedora and Debian. None is `latest`, a major version alone, or a release codename alone. The packaging tool is nfpm, from its official image.
+- **Every gate in `test-architecture.md` §CI policy is a target of the build:**
+  - `cargo fmt --check`;
+  - `cargo clippy --workspace --all-targets -- -D warnings`;
+  - `cargo test --workspace`;
+  - the musl-target test;
+  - the Python suite;
+  - the guard's `node --test` suite.
+
+  Each runs alone with `docker build --target …`, and with nothing on the machine but Docker and the checkout.
+- **The packages are made from the binary of the build that ran the musl tests.** It is not compiled a second time.
+- **An install-and-remove check for each format is a target, in a pinned image of a current release:** Fedora for the `.rpm`, and Debian stable for the `.deb`. Each check:
+  - installs the package from the local file with the distribution's resolver, which pulls `wl-clipboard`, and `xsel` by default;
+  - asserts that the declared dependencies are exactly `D-22`'s, and that the install pulled no Python;
+  - asserts every path, mode and link target in `D-22`, and that `bridge.py` is byte-identical to the tracked file;
+  - asserts the license `D-22` gives for its format: the `.rpm`'s `License` tag, or the `.deb`'s copyright file with its `Copyright:` field;
+  - verifies the installed files against the package database;
+  - runs `dclip` with no arguments, and gets the usage line and exit status 1 (`D-12`);
+  - removes the package, and asserts that nothing `D-22` installed remains, its directories included.
+- **The Fedora check also runs the packaged layout end to end,** as an unprivileged user whose `$HOME/.local/share/dclip` does not exist:
+  - `serve` starts, and creates the directory and the socket (`D-21`);
+  - the packaged `wl-paste`, run with a Python installed after the dependency assertions, lists types over that socket and prints the host's own error for the missing Wayland session, not a connection error;
+  - SIGTERM ends `serve` with exit status 0 and the socket gone.
+- **The workflow, under `.github/workflows/`:**
+  - runs on a push to any branch, on a pull request and on manual dispatch;
+  - has `contents: read` permission and uses no secret;
+  - runs on a runner label with a version, not `-latest`;
+  - uses only GitHub's own actions, each pinned to an exact release tag;
+  - contains no build, test or check logic of its own, so that every job is a `docker build` of a target a reader can run locally;
+  - uploads the `.deb` and the `.rpm` as artifacts only from a run in which every gate and both install checks passed.
+- **Documentation:**
+  - `test-architecture.md` §CI policy states the gate that is installed, and its change record carries the replaced text;
+  - [`documentation.md`](../.agents/docs/documentation.md) §8 and `AGENTS.md` §Where things are name the Dockerfile, the packaging directory and the workflow;
+  - `README.md` gives the build commands and the package install.
+- **Evidence:** `D-23` §Implemented names the workflow run on the pushed head of the branch, by its run number, in which every job passed. The Docker CLI is absent from the devcontainer, so that run is the validation of the builder.
 
 ---
 
@@ -1117,7 +1282,7 @@ Once it is chosen: add the license file, set `license` in the workspace manifest
 
 #### Q-3 — Which published names follow the product's rename to DClip?
 
-2026-10-09 · Open · Routed to the architect by the owner · Blocks stage 2 of [`plan.md`](packaging/plan.md), which publishes the package name and its paths
+2026-10-09 · Answered 2026-10-09 by `D-20` · Routed to the architect by the owner · Blocked stage 2 of [`plan.md`](packaging/plan.md), which publishes the package name and its paths, until answered
 
 The owner renamed the product DClip, short for `devcontainer-clipboard`, because the bridge is not tied to Claude. `NOTICE` and `README.md`'s title already say DClip. Nothing else was renamed.
 
@@ -1130,6 +1295,14 @@ The name is still `claude` in every value `CONTRIBUTING.md` §4 publishes, and i
 - the container's mount points `/opt/host-clipboard` and `/run/host-clipboard`, which do not carry the name.
 
 Nothing is released, so `CONTRIBUTING.md` §8 owes no compatibility for a rename now. Once stage 2 publishes packages, a rename of these values becomes a migration. The README's prose about Claude Code, which is the client the bridge was written for, is a separate question from the names.
+
+##### Q-3 §Answer
+
+2026-10-09 · Architect · Answered by `D-20`.
+
+- Every value in the list above is renamed now, before stage 2 builds anything, and none keeps an alias. The token is `dclip`, and environment variables start with `DCLIP_`. The binary is `dclip`, and the mount points become `/opt/dclip` and `/run/dclip`. `D-20` gives the full table and what is not renamed.
+- `D-17`, `D-18` and `D-19` fix some of these names, so each is superseded by a restatement under the new names: `D-21`, `D-22` and `D-23`. `D-22` also carries the license properties that `Q-2` §Answer owes.
+- The README's prose about Claude Code is client documentation, not naming. `D-20` keeps it where Claude Code's behaviour is the subject, and takes it out of the text that describes DClip. The agent harness under `.claude/` is neither, and is not renamed.
 
 ---
 

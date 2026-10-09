@@ -1,6 +1,6 @@
 # Decisions: the alternatives and why they lost
 
-The decisions themselves — statement, argument and required properties — are canonical in [`00-index.md`](../00-index.md) as `D-16`–`D-19`. This document keeps what the register entries do not: the options that were weighed, and why each one lost. An implementer owes the required properties in the register, and nothing here.
+The decisions themselves — statement, argument and required properties — are canonical in [`00-index.md`](../00-index.md) as `D-16`–`D-23`. `D-21`–`D-23` restate `D-17`–`D-19` under `D-20`'s names, so the alternatives below for the earlier three hold for their successors. This document keeps what the register entries do not: the options that were weighed, and why each one lost. An implementer owes the required properties in the register, and nothing here.
 
 ### The parser (D-16)
 
@@ -12,18 +12,18 @@ Canonical entry: `D-16` — `lexopt`, with `D-12`'s contract kept.
 - **Refuse `--allow-uid=UID` and `serve --` to keep `D-12`'s "nothing else" literal.** Rejected. Both are spellings of options that are already published, not new values (`CONTRIBUTING.md` §4). Refusing them would take code written against the library's grammar, for no behaviour a user could want.
 - **Pass `lexopt`'s own error text through for the refusals `D-12` does not list.** Rejected. One program would then speak in two voices, `unknown argument: --bogus` beside `invalid option '-x'` (`CONTRIBUTING.md` §12).
 
-### The default socket (D-17)
+### The default socket (D-17, D-21)
 
-Canonical entry: `D-17` — `$HOME/.local/share/claude-clipboard/clipboard.sock`.
+Canonical entry: `D-21`, which supersedes `D-17` — `$HOME/.local/share/dclip/clipboard.sock`. The options below were weighed under the old names.
 
 - **Keep the default beside the executable, and have package users set `CLAUDE_CLIPBOARD_SOCKET`.** Rejected. The packaged binary would fail by default with a permission error on `/usr/bin/clipboard.lock`, and the variable would become a value that every package user has to write (`CONTRIBUTING.md` §4).
 - **`$XDG_RUNTIME_DIR/claude-clipboard`.** Rejected. That directory is removed at logout, so a long-lived container's bind mount would point at a deleted directory after the next login. And if a container started before the bridge, Docker would create the mount source owned by root, and `serve` could not bind.
 - **Honour `$XDG_DATA_HOME`.** Rejected. The mount source written in a compose file would then depend on a variable the container definition cannot see. The README's path is `$HOME/.local/share/claude-clipboard`, and `CLAUDE_CLIPBOARD_SOCKET` remains the override.
 - **Fall back to the home directory only when the executable's directory is not writable.** Rejected. Two rules where one does, and the socket's location would depend on file permissions the user never looks at.
 
-### The packages (D-18)
+### The packages (D-18, D-22)
 
-Canonical entry: `D-18` — `claude-clipboard`, the binary in `/usr/bin` and the shim in `/usr/share/claude-clipboard`.
+Canonical entry: `D-22`, which supersedes `D-18` — `dclip`, the binary in `/usr/bin` and the shim in `/usr/share/dclip`. The options below were weighed under the old names.
 
 - **One mount, with the shim copied into the user's directory.** That would need a per-user step after every install or upgrade, and a copied shim goes stale when the host is upgraded, although the two ends of the protocol ship together. Rejected.
 - **The host binary embeds `bridge.py` and writes it beside the socket when `serve` starts.** One mount, and a shim that is always current. Rejected: it gives the server a file-installing responsibility it does not otherwise have, and the owner asked for the shim to be in the package. It is the candidate to reconsider if the owner's Fedora check shows that a container may not execute the shim from `/usr/share`.
@@ -34,9 +34,9 @@ Canonical entry: `D-18` — `claude-clipboard`, the binary in `/usr/bin` and the
 - **A systemd user unit in the package.** Not asked for, and `Q-1`, the watcher's death while serving, would shape such a unit. Out of scope.
 - **Retire `setup-host.sh`.** Not asked for. With `D-19`, a Fedora user can build the `.rpm` with Docker alone, so the script's remaining case is an install without root. The owner may retire it later, which would leave one layout in the README.
 
-### The builder and the workflow (D-19)
+### The builder and the workflow (D-19, D-23)
 
-Canonical entry: `D-19` — one Docker build, and the workflow is a thin caller.
+Canonical entry: `D-23`, which supersedes `D-19` — one Docker build, and the workflow is a thin caller.
 
 - **nfpm**, against `cargo-deb` with `cargo-generate-rpm`, against native `dpkg-deb` with `rpmbuild`, and against `fpm`.
   - nfpm is taken. It writes both formats from one declarative manifest, and it generates no dependencies and rewrites no shebangs, so the shim ships byte-identical and Python is never declared. It comes as an official image, so neither the host nor the builder needs Go.
@@ -49,3 +49,18 @@ Canonical entry: `D-19` — one Docker build, and the workflow is a thin caller.
 - **A floating `rust:1-bookworm`.** Rejected for the gates. A new stable release can bring a lint that fails clippy for a reason unrelated to the change, which is exactly what `test-architecture.md` §CI policy refuses.
 - **Check installation on the runner itself, on Ubuntu.** Rejected. Fedora is the host the project targets, and a check inside a container is reproducible locally.
 - **Publish a GitHub Release on a tag.** Not asked for. Workflow artifacts are what the owner asked for, and a release would make the values in `CONTRIBUTING.md` §4 permanent (§8). It is left to a later decision.
+
+### The names (D-20)
+
+Canonical entry: `D-20` — every published name carries `dclip`, and a client is named only where its behaviour is the subject.
+
+- **Keep the `claude` names until a first release, and rename then.** Rejected. Stage 2 is the step that publishes them: packages carry the package name, `/usr/share/…` and `/usr/bin/…`, and the README's compose lines carry the mounts. Renaming after that is a migration, and renaming now costs only edits (`CONTRIBUTING.md` §8).
+- **Compatibility aliases:** read `CLAUDE_CLIPBOARD_SOCKET` as a fallback, or install a `claude-clipboard-host` link. Ruled out by the owner, and refused by `CONTRIBUTING.md` §8 for an unreleased surface.
+- **`dclip-host` for the binary.** It keeps the side of the bridge in the name, as the old name and the Cargo package do. Rejected. It is the only DClip command a user types, there is no container-side command for it to be told apart from, and a package conventionally installs a command of its own name. The cost is a shorter name in a shared `/usr/bin`. A web search found no `dclip` package or command to collide with.
+- **`DCLIP_CLIPBOARD_SOCKET`.** Rejected. The `CLIPBOARD` in the old name told Claude's variables apart from the bridge's. With the token `dclip`, it repeats what the token says.
+- **Keep `/opt/host-clipboard` and `/run/host-clipboard`,** which never carried the old name and describe what is mounted. Rejected, narrowly. A user writes them in the same line as `$HOME/.local/share/dclip`, and one token for every value DClip asks a user to write is the property the rename is for. This is the last time renaming them is free. The owner may prefer the descriptive names, and nothing else depends on the choice.
+- **Rename the Cargo package `devcontainer-clipboard-host` and the repository.** Not done. Neither is a value a user writes (`CONTRIBUTING.md` §4), and `devcontainer-clipboard` is the name DClip abbreviates. Renaming the repository is the owner's to do.
+- **A repository-wide replacement of `claude`.** Rejected. It would rename the agent harness, whose vendor's tooling finds `.claude/` and `CLAUDE.md` by name, and the README's Claude Code instructions, which are about that client and are true as written.
+- **Take Claude Code out of the README.** Rejected. Claude Code is the client the bridge was written for, and the paste check and the tracing exist because of how it reads the clipboard. Describing DClip without a client, and keeping that client's sections where its behaviour is the subject, keeps both true.
+- **Rewrite the record to the new names.** Rejected by `documentation.md` §6. Findings, investigations, journals and implemented decisions describe the tree when they were written. `D-17`–`D-19` are superseded rather than edited.
+- **One decision that renames the values in `D-17`–`D-19` without superseding them.** Rejected. A changed path is a change in what a decision requires of the code, and a decision amended that way would be partly in force (`documentation.md` §6).
