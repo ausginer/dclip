@@ -39,13 +39,17 @@ layers it touches agree.
    carries it. They need only `/bin/sh` and GNU coreutils 8.31 or later, so
    they run in the default `cargo test`. Each starts the binary through `env
    --default-signal`, so that no verdict on signal handling depends on a
-   signal the test runner inherited as ignored. The peer UID check and the per-connection deadlines
-   are proved by the first two layers only: a refusal needs a second account,
-   and the running server's 12 s phase is too long to wait out.
+   signal the test runner inherited as ignored. The peer UID check and the
+   per-connection deadlines are proved by the first two layers only: a refusal
+   needs a second account, and the running server's 12 s phase is too long to
+   wait out.
 4. **Python unit tests** — `test_bridge.py`, over the shim's argument
-   translation and output, with `request_host` mocked. They prove that each
-   supported `wl-paste`/`xclip` invocation becomes the right request and that
-   everything else is refused.
+   translation and output, with `request_host` mocked, and over the shim's
+   reading of a response, with `request_host` driven against a stand-in host
+   on a real socket. They prove that each supported `wl-paste`/`xclip`
+   invocation becomes the right request and that everything else is refused,
+   and that a response the host has delivered reaches the user even when the
+   host closed before the request was sent.
 
 Each catches a different fault, and the value is diagnostic: the failing layer
 says where the problem is.
@@ -231,3 +235,12 @@ Changed by `D-15`, when the binary layer began to start every binary through `en
 
 > carries it. They need only `/bin/sh` and coreutils, so they run in the
 > default `cargo test`.
+
+### 2026-10-09 — The Python layer reads responses
+
+Changed by `D-14`, when the shim began to read a response after a failed send. The fourth layer read:
+
+> 4. **Python unit tests** — `test_bridge.py`, over the shim's argument
+>    translation and output, with `request_host` mocked. They prove that each
+>    supported `wl-paste`/`xclip` invocation becomes the right request and that
+>    everything else is refused.

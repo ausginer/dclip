@@ -226,7 +226,9 @@ The Docker build runs them before building. From the repository root:
 cargo test
 ```
 
-The Python tests cover the container wrapper's argument translation:
+The Python tests cover the container wrapper's argument translation, and its
+reading of the host's response, including a refusal the host sent before the
+wrapper's request arrived:
 
 ```bash
 python3 -m unittest discover -s . -p test_bridge.py -v

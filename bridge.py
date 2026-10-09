@@ -20,9 +20,21 @@ def request_host(request):
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
         connection.settimeout(12)
         connection.connect(socket_path())
-        connection.sendall(json.dumps(request).encode() + b"\n")
+        # A host that refuses the connection writes its response and closes
+        # without reading the request, so the send can fail with the refusal
+        # already waiting to be read. Read it whatever became of the send.
+        failed_send = None
+        try:
+            connection.sendall(json.dumps(request).encode() + b"\n")
+        except OSError as error:
+            failed_send = error
         with connection.makefile("rb") as stream:
-            header = json.loads(stream.readline(4097))
+            try:
+                header = json.loads(stream.readline(4097))
+            except (OSError, ValueError):
+                if failed_send is None:
+                    raise
+                raise failed_send from None
             if not header.get("ok"):
                 raise RuntimeError(header.get("error", "host bridge failed"))
             size = header.get("size")
