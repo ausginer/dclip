@@ -60,10 +60,11 @@ fn should_keep_serving_after_peers_that_left_before_they_were_accepted() {
     scratch.clipboard(b"image/png\n", b"");
     let server = scratch.serve(&[]);
     // Stopped, `serve` accepts nothing, so every peer below has gone by the
-    // time its connection is accepted. The backlog holds far more than these.
+    // time its connection is accepted. There are fifteen, so that with the
+    // request after them no connection meets the limit of sixteen.
     server.signal("STOP");
     for sent in [&b""[..], b"{\"op\":", b"{\"op\":\"types\"}\n"] {
-        for _ in 0..10 {
+        for _ in 0..5 {
             server.connect().write_all(sent).unwrap();
         }
     }
