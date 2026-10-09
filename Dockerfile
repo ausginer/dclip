@@ -54,3 +54,20 @@ COPY --chown=node .claude/settings.json .claude/settings.json
 COPY --chown=node .claude-plugin .claude-plugin
 COPY --chown=node .scripts .scripts
 RUN node --test .claude/plugins/harness-effort-guard/tests/
+
+# The .deb and the .rpm, from the musl stage's binary and the tracked files.
+# Both carry the workspace version, the one `version` line in Cargo.toml.
+FROM goreleaser/nfpm:v2.47.0@sha256:a662cb167d7b6d3a83920c83d76b12d02b8ac5dd2c13e5c62c15270b23f6df0c AS package
+WORKDIR /src
+COPY Cargo.toml bridge.py LICENSE NOTICE README.md ./
+COPY packaging packaging
+COPY --from=musl /home/builder/src/target/x86_64-unknown-linux-musl/release/dclip dist/dclip
+RUN DCLIP_VERSION=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml) \
+    && test -n "$DCLIP_VERSION" \
+    && export DCLIP_VERSION \
+    && mkdir /out \
+    && nfpm package --config packaging/nfpm.yaml --packager deb --target /out/ \
+    && nfpm package --config packaging/nfpm.yaml --packager rpm --target /out/
+
+FROM scratch AS packages
+COPY --from=package /out/ /

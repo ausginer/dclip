@@ -1,0 +1,102 @@
+# The dclip packages, one manifest for the .deb and the .rpm. Paths under
+# `src` are relative to the directory nfpm runs in, the repository's layout;
+# `dist/dclip` is the release musl binary the build's musl stage tested.
+# DCLIP_VERSION is the workspace version, read from Cargo.toml by the build.
+name: dclip
+arch: amd64
+platform: linux
+version: ${DCLIP_VERSION}
+release: 1
+section: utils
+priority: optional
+maintainer: Vladimir Rindevich
+homepage: https://github.com/ausginer/dclip
+license: Apache-2.0
+description: |-
+  Image reads from the host's Wayland clipboard inside a devcontainer.
+  The host binary serves the current image over a Unix socket. The container
+  mounts the shim and runs it as wl-paste and xclip.
+
+depends:
+  - wl-clipboard
+recommends:
+  - xsel
+
+contents:
+  - src: dist/dclip
+    dst: /usr/bin/dclip
+    file_info:
+      mode: 0755
+
+  - dst: /usr/share/dclip
+    type: dir
+    file_info:
+      mode: 0755
+  - dst: /usr/share/dclip/bin
+    type: dir
+    file_info:
+      mode: 0755
+  - src: bridge.py
+    dst: /usr/share/dclip/bridge.py
+    file_info:
+      mode: 0755
+  - src: ../bridge.py
+    dst: /usr/share/dclip/bin/wl-paste
+    type: symlink
+  - src: ../bridge.py
+    dst: /usr/share/dclip/bin/xclip
+    type: symlink
+
+  - dst: /usr/share/doc/dclip
+    type: dir
+    file_info:
+      mode: 0755
+  # README.md is %doc in the .rpm. nfpm's deb packager leaves out an entry
+  # typed doc, so the .deb's is an ordinary file.
+  - src: README.md
+    dst: /usr/share/doc/dclip/README.md
+    type: doc
+    packager: rpm
+    file_info:
+      mode: 0644
+  - src: README.md
+    dst: /usr/share/doc/dclip/README.md
+    packager: deb
+    file_info:
+      mode: 0644
+
+  # The license files are where each format's tooling looks: %license files
+  # under /usr/share/licenses in the .rpm, which survive tsflags=nodocs, and
+  # plain files beside the copyright file in the .deb.
+  - dst: /usr/share/licenses/dclip
+    type: dir
+    packager: rpm
+    file_info:
+      mode: 0755
+  - src: LICENSE
+    dst: /usr/share/licenses/dclip/LICENSE
+    type: license
+    packager: rpm
+    file_info:
+      mode: 0644
+  - src: NOTICE
+    dst: /usr/share/licenses/dclip/NOTICE
+    type: license
+    packager: rpm
+    file_info:
+      mode: 0644
+  - src: LICENSE
+    dst: /usr/share/doc/dclip/LICENSE
+    packager: deb
+    file_info:
+      mode: 0644
+  - src: NOTICE
+    dst: /usr/share/doc/dclip/NOTICE
+    packager: deb
+    file_info:
+      mode: 0644
+  - src: packaging/copyright
+    dst: /usr/share/doc/dclip/copyright
+    packager: deb
+    file_info:
+      mode: 0644
