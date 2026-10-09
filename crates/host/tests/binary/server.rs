@@ -1,7 +1,7 @@
 use crate::support::{PATIENCE, Scratch, await_pid, read_response, running};
 use std::{
     fs,
-    io::Write,
+    io::{Read, Write},
     os::unix::net::UnixListener,
     thread,
     time::{Duration, Instant},
@@ -145,18 +145,27 @@ fn should_refuse_a_connection_over_the_limit_and_keep_serving() {
     );
     drop(idle);
     // A place comes free once its worker has seen its peer go, which the
-    // test cannot observe, so it asks until a place has.
+    // test cannot observe, so it asks until a place has. A refused connection
+    // is closed with the request unread, which can reset it before the
+    // refusal is read, so a failed exchange is one more attempt.
     let deadline = Instant::now() + PATIENCE;
     loop {
-        let response = server.request(b"{\"op\":\"types\"}\n");
-        if response.header["ok"] == true {
-            break;
+        let mut stream = server.connect();
+        let mut bytes = Vec::new();
+        let exchanged = stream
+            .write_all(b"{\"op\":\"types\"}\n")
+            .and_then(|()| stream.read_to_end(&mut bytes));
+        if exchanged.is_ok() {
+            let response = read_response(&bytes[..]);
+            if response.header["ok"] == true {
+                break;
+            }
+            assert_eq!(
+                response.header["error"], "too many concurrent clipboard requests",
+                "{:?}",
+                response.header
+            );
         }
-        assert_eq!(
-            response.header["error"], "too many concurrent clipboard requests",
-            "{:?}",
-            response.header
-        );
         assert!(Instant::now() < deadline, "no place came free");
         thread::sleep(Duration::from_millis(10));
     }
