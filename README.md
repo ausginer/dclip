@@ -244,3 +244,7 @@ particular CLI or terminal.
 - [Issue: image paste silently fails when wl-paste is present but non-functional](https://github.com/anthropics/claude-code/issues/85284)
 - [Issue: add image/bmp to the Linux clipboard check](https://github.com/anthropics/claude-code/issues/25935)
 - [Docker: bind mounts and SELinux](https://docs.docker.com/engine/storage/bind-mounts/)
+
+## License
+
+Apache License 2.0. See [`LICENSE`](LICENSE).

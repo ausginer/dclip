@@ -20,4 +20,4 @@ The entries themselves are canonical in the register, [`00-index.md`](../00-inde
 | --------- | ------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | Findings  | `F-35`        | A non-UTF-8 argument makes the binary panic                                                                               |
 | Decisions | `D-16`–`D-19` | `lexopt` over OS strings with `D-12` kept; the default socket in the user's data directory; the `claude-clipboard` packages; one Docker build that the workflow only invokes |
-| Questions | `Q-2`         | The packages' license                                                                                                     |
+| Questions | `Q-2`         | The packages' license: Apache-2.0, answered by the owner                                                                 |

@@ -1099,11 +1099,20 @@ Recommendation: report and continue. That costs one `try_wait` on an event the a
 
 #### Q-2 — Under what license are the packages distributed?
 
-2026-10-09 · Open · Owner's decision; does not block `D-18` unless a format refuses to build without a license value
+2026-10-09 · Answered 2026-10-09 by the owner: Apache-2.0 · Owner's decision; does not block `D-18` unless a format refuses to build without a license value
 
 The repository has no license file, and neither manifest declares one. A `.deb` and an `.rpm` normally carry a license field, and a package that is redistributed needs one. `D-18` ships no license value until the owner chooses one. A license is the owner's grant, and no role can infer it.
 
 Once it is chosen: add the license file, set `license` in the workspace manifest, and give the packaging manifest the same value. A `.deb` carries it in `/usr/share/doc/claude-clipboard/copyright`, and an `.rpm` in its `License` tag.
+
+##### Q-2 §Answer
+
+2026-10-09 · The owner chose the Apache License 2.0.
+
+- `LICENSE` at the repository root is the Apache License 2.0 text as published at `https://www.apache.org/licenses/LICENSE-2.0.txt`, unmodified. Its appendix's copyright line is left as the template gives it.
+- `[workspace.package]` sets `license = "Apache-2.0"`, and `crates/host` inherits it.
+- `README.md` §License names it.
+- Owed by stage 2 of [`plan.md`](packaging/plan.md): the packaging manifest sets the same value, so that the `.rpm`'s `License` tag is `Apache-2.0` and the `.deb` carries the license in `/usr/share/doc/claude-clipboard/copyright`. `D-18`'s "no license value" property no longer applies, because the condition it waited on is met.
 
 ---
 

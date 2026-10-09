@@ -66,3 +66,5 @@ A dated log of this work: what was done, what was found, what is waiting. Newest
 - **`lexopt`'s `Error` `Display` is linked but unreachable**, through `?` on `Parser::next`, about 0.6 KiB. Mapping that error to a message of our own would drop it, at the cost of a message for a state the parser cannot reach. Left as `?`, with a comment saying why it cannot fail.
 
 **Waiting:** stage 2, by an `implementer` session.
+
+**`Q-2`, the same session.** The owner chose Apache-2.0. `LICENSE`, the workspace's `license` field and `README.md` §License are a commit of their own, and `Q-2` §Answer in the register says what stage 2 owes: the same value in the packaging manifest, carried into both formats.
