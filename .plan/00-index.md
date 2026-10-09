@@ -746,7 +746,7 @@ Required properties:
 
 #### D-20 — DClip's published names carry `dclip`, and a client is named only where its behaviour is the subject
 
-2026-10-09 · Accepted · Answers `Q-3` · Amends `CONTRIBUTING.md` §4 and `.agents/docs/documentation.md` §5.2 · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 2
+2026-10-09 · Accepted · Implemented 2026-10-09 · Answers `Q-3` · Amends `CONTRIBUTING.md` §4 and `.agents/docs/documentation.md` §5.2 · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 2
 
 The owner renamed the product DClip, short for `devcontainer-clipboard`, because the bridge is not tied to Claude. Every value `CONTRIBUTING.md` §4 publishes still says `claude`. Nothing is released, so renaming those values now costs edits and nothing else, and §8 owes no alias for the old ones. Once stage 2 publishes packages, each value is in someone's compose file, `config.kdl` or package database, and a rename becomes a migration. So all of them are renamed now, in one change, before anything is built under the old names. The owner ruled out compatibility aliases.
 
@@ -798,9 +798,18 @@ Required properties:
 - **The other current-state documents follow the names in the same commit:** `CONTRIBUTING.md` §What is being written and §15, `AGENTS.md` §Where things are, `documentation.md` §5 and §8, and `test-architecture.md`. Their mentions of Claude Code as a component the project does not own are client documentation, and they stay.
 - **Witness:** at the head of the change, `git grep -nE 'claude-clipboard|CLAUDE_CLIPBOARD|host-clipboard'` matches only under `.plan/`. The gates in `handoff.md` pass, including the Python suite, and `bash -n setup-host.sh` passes.
 
+##### D-20 §Implemented
+
+2026-10-09 · Branch `host/initial-refactoring`, in one commit, host and shim together.
+
+- **Sites.** `crates/host/Cargo.toml`'s `[[bin]]` is `dclip`. `cli::USAGE` and the program-name prefix in `main` say `dclip`. `server::serve` reads `DCLIP_SOCKET`. `bridge.py`'s `socket_path` reads `DCLIP_SOCKET` and `client` reads `DCLIP_TRACE`, and `test_bridge.py` patches `DCLIP_SOCKET`. `support::BINARY` is `env!("CARGO_BIN_EXE_dclip")`, and `Scratch::command` sets `DCLIP_SOCKET`. `setup-host.sh` installs `$HOME/.local/share/dclip/dclip` and names `/opt/dclip` as the mount point. The export path in `crates/host/Dockerfile` followed, and that file is now gone (`D-25`).
+- **Tests.** Only name literals changed: the binary tables' program-name prefix and usage line, and the variable names. No row of `D-12`'s or `D-16`'s tables changed. Every suite passed before and after.
+- **Documents.** `CONTRIBUTING.md` §What is being written, §4 and §15. §4 gives the new variables, the package name, the paths and the naming rule, and its change record carries the replaced paragraph. `AGENTS.md` §Where things are. `documentation.md` §5 and §8, and §5.2's rule on naming a client, with a §9 entry. `test-architecture.md`. `README.md`: the title and opening describe DClip and say once that it was written for Claude Code; step 5's client-neutral check comes first, and the part in Claude Code is introduced as Claude Code's; the Sources list names Claude Code's documentation and issues as that client's.
+- **Witness.** At the head of the change, `git grep -nE 'claude-clipboard|CLAUDE_CLIPBOARD|host-clipboard'` matches under `.plan/` and in one line outside it: `CONTRIBUTING.md`'s change-record entry for §4, which quotes the replaced paragraph because this decision requires that record to carry it. Every gate in `handoff.md` passed, the Python suite included, and `bash -n setup-host.sh` passed.
+
 #### D-21 — `serve`'s default socket is in `$HOME/.local/share/dclip`, wherever the binary is
 
-2026-10-09 · Accepted · Supersedes `D-17` · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 2
+2026-10-09 · Accepted · Implemented 2026-10-09 · Supersedes `D-17` · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 2
 
 `D-17` stands with `D-20`'s names. This entry restates it, so that the contract can still be read from one entry.
 
@@ -817,6 +826,18 @@ Required properties:
 - **The shim's resolution of the socket is unchanged.**
 - **Witness:** a binary test runs `serve` with `HOME` in its scratch directory, no `DCLIP_SOCKET`, and umask 077. It finds the socket at the default path, and the created directory at mode 0755. Before the change it fails, because the socket is beside the test binary.
 - **`README.md`** says where the host's socket is, and the autostart line works for both installs.
+
+##### D-21 §Implemented
+
+2026-10-09 · Branch `host/initial-refactoring`.
+
+- **The default.** `server::serve` takes `DCLIP_SOCKET` when it is set. Otherwise it refuses an unset or empty `HOME` with `neither DCLIP_SOCKET nor HOME is set`, creates `$HOME/.local/share` with `create_dir_all`, and creates `$HOME/.local/share/dclip` with one `DirBuilder::create`. If that call created the directory, `serve` sets it to 0755. If the directory already existed, its mode is left alone. The parents are created under the user's umask: a container reaches the socket through a mount of the `dclip` directory itself, never through its parents. The executable's location no longer enters the path.
+- **Support.** `support::Socket` says where the binary is told to put its socket: `Override`, the scratch socket, as before; or `Default(home)`, with no `DCLIP_SOCKET`, `HOME` as given or unset, and umask 077. The umask is set by `/bin/sh`, which `env` starts after restoring the signal dispositions, so the binary layer still sets no `unsafe` `pre_exec`. `Scratch::run_with` and `Scratch::serve_at_default` use it.
+- **Tests, binary.**
+  - `should_bind_the_default_socket_in_a_directory_it_creates_at_0755`. Before the change it failed with `no default socket`, because `serve` had bound `target/debug/clipboard.sock` beside the test binary. That socket and its lock were removed afterwards. With the `set_permissions` call removed, it fails with mode 448 (0700) against 493 (0755).
+  - `should_exit_1_naming_both_variables_without_home_or_a_socket_override`, with rows for `HOME` unset and empty. Before the change it failed because `serve` started and did not exit.
+- **`README.md`** step 2 says where the socket is for both installs, and step 6 gives an autostart line for each.
+- **Measured** (`CONTRIBUTING.md` §15), from a clean export, `rustc 1.98.1`: the release musl binary is 627,456 bytes, +4,096 (+0.7%) against `D-16` §Implemented's 623,360, and `.text` is 471,230 bytes, +3,632. The figure also includes `D-20`'s shorter usage line and prefix. `cargo tree -e normal` is unchanged.
 
 #### D-22 — The `dclip` packages carry the host binary and the container shim, and require only `wl-clipboard`
 
@@ -911,7 +932,7 @@ Required properties:
 
 #### D-24 — The `dclip` packages carry the host binary, the container shim, `LICENSE` and `NOTICE`, and require only `wl-clipboard`
 
-2026-10-09 · Accepted · Supersedes `D-22` · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 2
+2026-10-09 · Accepted · Implemented 2026-10-09 · Supersedes `D-22` · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 2
 
 `D-22` stands, and it gains the license files. The owner asked that both formats ship `LICENSE` and `NOTICE` as files the package owns, byte-identical to the repository's, at the paths each format uses. `D-22` carried the license only as metadata, in the `.rpm`'s `License` tag and the `.deb`'s copyright file. Apache-2.0 §4(a) and §4(d) ask whoever redistributes the work to pass on the license and the `NOTICE` text, and a package is how DClip is redistributed. This entry restates `D-22` with the files added, so that the packaging contract can still be read from one entry.
 
@@ -959,9 +980,20 @@ Required properties:
   - `PATH` gains `/opt/dclip/bin`, as in a `setup-host.sh` install.
 - **`README.md`** gives the package install and its layout, and keeps `setup-host.sh` with its one-mount layout. It does not say that the package layout works under enforcing SELinux until the owner's Fedora check has shown it. If the check shows a denial, it goes to the architect with its AVC record. Neither `/usr/share/dclip` nor the host's policy is relabelled to work around it.
 
+##### D-24 §Implemented
+
+2026-10-09 · Branch `host/initial-refactoring`.
+
+- **The manifest.** `packaging/nfpm.yaml`, for nfpm 2.47.0. The version is `${DCLIP_VERSION}`, which the `package` stage reads from the one `version` line in `Cargo.toml`. The release is `1`, and the license is `Apache-2.0`. It depends on `wl-clipboard` and recommends `xsel`. The homepage is `https://github.com/ausginer/dclip`.
+- **Contents.** Every file and directory in this entry's list, with its mode. `README.md` is a `doc` entry for the `.rpm` and an ordinary file for the `.deb`, because nfpm's deb packager leaves out an entry typed `doc`: a `.deb` built locally with one entry for both formats had no `README.md`. `LICENSE` and `NOTICE` are `license` entries under `/usr/share/licenses/dclip/` for the `.rpm`, and plain files in `/usr/share/doc/dclip/` for the `.deb`, each limited to its packager. The package owns `/usr/share/dclip`, its `bin`, `/usr/share/doc/dclip`, and, in the `.rpm`, `/usr/share/licenses/dclip`.
+- **The copyright file.** `packaging/copyright`, in Debian's machine-readable format. `License: Apache-2.0`, and `Copyright: 2026 Vladimir Rindevich`, which is `NOTICE`'s line. `check-deb` compares the two, so they cannot drift apart unnoticed.
+- **Maintainer.** A `.deb` needs a `Maintainer` field. It is `Vladimir Rindevich`, the copyright holder, with no address.
+- **Verified** by `D-25`'s checks in run 6. Before CI ran, the locally built `.deb` was listed with `dpkg-deb`, and the `.rpm`'s header was read with a scratch parser: name, version, release, license, requires, recommends, no scriptlets, the file list and its modes, and the `%doc` and `%license` flags.
+- **`README.md`** gives the package install and its two-mount layout, and keeps `setup-host.sh` with its one mount. It says that whether a container under enforcing SELinux may run the shim from `/usr/share/dclip` has not been verified.
+
 #### D-25 — One Docker build runs every gate and makes every product, and its install checks see every file the packages own
 
-2026-10-09 · Accepted · Supersedes `D-23` · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 2
+2026-10-09 · Accepted · Implemented 2026-10-09 · Supersedes `D-23` · Alternatives in [`decisions.md`](packaging/decisions.md) · Plan in [`plan.md`](packaging/plan.md) §Stage 2
 
 `D-23` stands, and its install checks gain two things. They check `LICENSE` and `NOTICE`, which `D-24` adds to the packages. And they install with documentation included, which `D-23` left to chance. Fedora's container image installs with `tsflags=nodocs`, and Debian's slim images exclude `/usr/share/doc`. In either, a check that asserts a documentation file fails on a correct package, or would have to be weakened to pass. A check that asserts what a package ships has to see everything the package ships. This entry restates `D-23` with both changes, so that the builder's contract can still be read from one entry.
 
@@ -1012,6 +1044,45 @@ Required properties:
   - [`documentation.md`](../.agents/docs/documentation.md) §8 and `AGENTS.md` §Where things are name the Dockerfile, the packaging directory and the workflow;
   - `README.md` gives the build commands and the package install.
 - **Evidence:** `D-25` §Implemented names the workflow run on the pushed head of the branch, by its run number, in which every job passed. The Docker CLI is absent from the devcontainer, so that run is the validation of the builder.
+
+##### D-25 §Implemented
+
+2026-10-09 · Branch `host/initial-refactoring`. Validated by workflow run 6, on the pushed head that carries every product file.
+
+- **The `Dockerfile`**, at the root, replaces `crates/host/Dockerfile`. Its targets:
+  - `fmt`, `clippy`, `test` and `musl`, each from one `rust` stage that builds as the unprivileged user `builder`. `musl` runs the musl tests and then the release build in the same `RUN`. `binary` exports `musl`'s `dclip`.
+  - `python`, as the unprivileged user `tester`, and `guard`, as `node`. `guard` copies `.claude/agents`, `.claude/plugins`, `.claude/settings.json`, `.claude-plugin` and `.scripts`, which is what the suite reads.
+  - `package` runs nfpm over `musl`'s binary, so it is not compiled again.
+  - `check-rpm` and `check-deb` copy `package`'s output with the tracked files and run their scripts.
+  - `packages` copies the packages out of both check stages, so it builds only after both checks pass, and it exports the files they installed.
+  
+  `.dockerignore` admits exactly the files those stages copy.
+- **Pinned versions**, each the current release on 2026-10-09, by tag and digest:
+
+  | Image | Tag | Digest |
+  | --- | --- | --- |
+  | `rust` | `1.99.0-slim-trixie` | `sha256:24e632c09342c20abf8312cf4f61430a911c01ed3a5e4c02b87292b1c39c5273` |
+  | `python` | `3.14.8-slim-trixie` | `sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170` |
+  | `node` | `26.11.1-trixie-slim` | `sha256:193fe51b64e77981119c98c2002c9e32a70e2f006fb4d25068ce0558998917f0` |
+  | `goreleaser/nfpm` | `v2.47.0` | `sha256:a662cb167d7b6d3a83920c83d76b12d02b8ac5dd2c13e5c62c15270b23f6df0c` |
+  | `fedora` | `44` | `sha256:43b29f65a41eb9c35e1cd5323e3bdf3b655c2357a9f4f1ff2f9c2798e5045d80` |
+  | `debian` | `13.7` | `sha256:913f6706df59a68922d1dd08f78c2476560a8d367897200a6005b00e5f67c2d5` |
+
+  Fedora names a release by one number, so the digest is what makes the pin exact. `fedora:latest` had the same digest as `44`, and `45` and `46` were pre-release tags. The runner is `ubuntu-24.04`. The workflow's actions are `actions/checkout@v7.0.1` and `actions/upload-artifact@v7.0.2`.
+- **The checks**, `packaging/check-rpm.sh` and `packaging/check-deb.sh`, with the assertions in `packaging/check-lib.sh`. Each assertion prints the property it checks. In run 6, 47 held on Fedora and 43 on Debian.
+  - **Documentation and recommends.** On Fedora, every `dnf` call carries `--setopt=tsflags= --setopt=install_weak_deps=True`. Before installing, the check asserts from `dnf --dump-main-config` that no `nodocs` is in effect and that weak dependencies are on, and that rpm's `%_excludedocs` is unset or 0. On Debian, every dpkg `path-exclude` whose glob matches the package's documentation is removed, and the check asserts that none remains. `debian:13.7` had none to remove. The check also asserts that apt installs recommended packages.
+  - The rest is as this entry lists. Python, `shadow-utils` and `util-linux` are installed for the end-to-end run, after the dependency assertions. The packaged `wl-paste` printed `wl-paste: wl-paste failed; check it on Fedora`, which is the host's own error, and exited 1.
+- **The workflow**, `.github/workflows/ci.yml`. It runs on a push to any branch, on a pull request and on manual dispatch, with `contents: read` and no secret. One matrix job per target builds that target with `docker build --target`. The `packages` job needs all of them, builds `packages` with a local output, and uploads `dist/` as `dclip-packages`.
+- **Runs.** Run 1 was the first time the builder ran. All six gates passed in it, the Rust suites as an unprivileged user on Rust 1.99.0, so no test failed only in the builder. Runs 1 to 3 failed in the checks' own scripts, and each fix was a new commit:
+  - run 1: Fedora's image has no `cmp`, and the Debian check expected a `./` member in the control archive that `dpkg-deb` does not list;
+  - run 2: diagnostics showed the installed `bridge.py` had the tracked file's digest, so files are now compared by digest;
+  - run 3: `$!` named the subshell that ran a shell function in the background, so SIGTERM ended the subshell with status 143 rather than `serve`; `serve` is now started from a command array.
+  
+  Run 4 passed every job.
+- **Mutation.** Run 5 built a commit whose manifest dropped the `.rpm`'s `license` type from `NOTICE`, and the next commit reverted it. Every job passed except `check-rpm`, which failed at `rpm -qL lists exactly the two license files`, with only `LICENSE` listed. Every assertion before it held, and `packages` was skipped, so nothing was uploaded.
+- **Artifacts.** Run 6 uploaded `dclip-0.1.0-1.x86_64.rpm` and `dclip_0.1.0-1_amd64.deb`. Downloaded and read back here: name `dclip`, version 0.1.0, release or revision 1, `x86_64` and `amd64`, `License: Apache-2.0`, requires or depends on `wl-clipboard` only, recommends `xsel`. The packaged `dclip` is a static PIE with no interpreter and no needed libraries, 615,296 bytes from Rust 1.99.0. Run without arguments, it prints the usage line and exits 1.
+- **Documentation.** `test-architecture.md` §CI policy, with a change-record entry. `documentation.md` §8. `AGENTS.md` §Where things are. `README.md`: the build targets, the package install, both layouts, both autostart lines, and CI in §Tests and limitations.
+- **After run 6,** only `.plan/` changed. `.dockerignore` excludes it from every stage, so no later run can build anything differently.
 
 ---
 

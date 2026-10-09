@@ -2,7 +2,7 @@
 
 Replace the hand-written command-line parser with `lexopt`, keeping `D-12`'s contract, then build installable x86_64 `.deb` and `.rpm` packages with GitHub Actions. The packages carry the container shim and declare their runtime dependencies, and they need no development tools and no Python on the host. An install-and-remove check, and the Docker builder that has never yet run, are validated on every push.
 
-**Status:** planned on 2026-10-09. Stage 1 is implemented. `Q-3` is answered by `D-20`, and stage 2, which opens with the rename to DClip's names, is next. Round `host-initial-refactoring-r3` waits until both stages are implemented, and then reviews the complete project.
+**Status:** both stages are implemented as of 2026-10-09, and CI passes on the pushed head. Next is the owner's check on Fedora (`plan.md` §After stage 2), then round `host-initial-refactoring-r3` over the complete project.
 
 ## Reading order
 

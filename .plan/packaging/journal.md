@@ -134,3 +134,38 @@ A dated log of this work: what was done, what was found, what is waiting. Newest
 - **No second Fedora install with `nodocs`.** `rpm -qL` stands in for it.
 
 **Waiting:** stage 2 from step 2.0, by an `implementer` session; then the owner's Fedora check and round r3.
+
+## 2026-10-09 — Stage 2: the names, the socket default, the builder, the packages and CI (implementer)
+
+**Session.** Implementer role on branch `host/initial-refactoring`. `Effort guard active` was present at start. The request: stage 2 of [`plan.md`](plan.md), following `D-20`, `D-21`, `D-24` and `D-25`, including CI validation, mutation evidence and artifact checks, then a handoff for the owner's Fedora check. `Q-1` stays out of scope.
+
+**Done.** Each decision's §Implemented in the register has the sites, the tests, the measurements and the evidence. In order:
+
+- 2.0, the rename, in one commit;
+- 2.1, the default socket, with its witness failing first;
+- 2.2 to 2.6, the builder, the suites' stages, the packages, the checks and the workflow;
+- 2.7, four runs to green, the mutation run and the artifacts;
+- 2.8, the documentation.
+
+Workflow run 6, on the head that carries every product file, passed every job.
+
+**Commits that do not match their message.** A chained shell command stopped partway through step 2.2. The commit that moves the builder to the root lacks the `binary` stage. The next commit, labelled as adding the shim's and the guard's suites, carries that stage and the suites' `.dockerignore` entries. The following commit adds the suites' stages. No history was rewritten, and the tree at the head is as intended.
+
+**Gates.** Locally: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (38 unit, 23 binary) and the same for `x86_64-unknown-linux-musl`, the Python suite, the guard's suite (228), and `bash -n` for `setup-host.sh` and every script under `packaging/`. In CI, the same gates in the pinned images, and both install checks.
+
+**Judgement calls an owner may want to revisit:**
+
+- **The `.deb`'s `Maintainer` is `Vladimir Rindevich`, with no address.** Debian requires the field, and its policy expects an address. No address was published, because the owner has not chosen one.
+- **`packages` builds both install checks before it exports.** `docker build --target packages` therefore takes as long as both checks. In exchange, the files it exports are the ones the checks installed, from the same build.
+- **CI's Rust is 1.99.0, the current release. The devcontainer has 1.98.1.** No lint or test differed between the two. CI's binary is 615,296 bytes and the devcontainer's is 627,456, so a size figure names its toolchain.
+- **Every image is pinned by digest as well as by tag.** Fedora names a release by one number, so only the digest makes its pin exact. The other images are pinned the same way, for one rule.
+- **The runner is `ubuntu-24.04`.** GitHub's runner-images repository also documents `ubuntu-26.04`, but its availability was not checked.
+- **The parents of `$HOME/.local/share/dclip` get the user's umask.** Only the directory `serve` creates for the socket is set to 0755 (`D-21` §Implemented).
+- **`D-20`'s `git grep` witness matches one line outside `.plan/`.** It is the quote in `CONTRIBUTING.md`'s change record that the same decision requires.
+
+**Not observed here.** SELinux. The checks run without enforcing SELinux and without Wayland. They prove the files, the dependencies, the socket and the shim's path to the host. They do not prove a paste.
+
+**Waiting:**
+
+- the owner's check on Fedora, with SELinux enforcing, as [`plan.md`](plan.md) §After stage 2 describes, using run 6's `dclip-packages` artifact;
+- then round `host-initial-refactoring-r3`, by a fresh `consolidator`.
