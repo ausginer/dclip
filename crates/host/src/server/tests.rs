@@ -79,3 +79,40 @@ fn should_release_a_place_when_its_connection_is_done() {
     drop(slot);
     assert_eq!(active.load(Ordering::Relaxed), WORKERS - 1);
 }
+
+/// A pipe that is readable from the start, as the wake pipe is once shutdown
+/// has been requested.
+fn shutdown_requested() -> io::PipeReader {
+    let (reader, mut writer) = io::pipe().unwrap();
+    writer.write_all(&[1]).unwrap();
+    reader
+}
+
+#[test]
+fn should_turn_away_a_request_still_arriving_at_shutdown() {
+    let stream = with_peer(|mut far| {
+        far.write_all(b"{\"op\":").unwrap();
+        thread::sleep(Duration::from_secs(3));
+    });
+    let shutdown = shutdown_requested();
+    let started = Instant::now();
+    let refusal = read_request(Deadline::new(&stream, BOUND).or_until_shutdown(shutdown.as_fd()))
+        .err()
+        .unwrap();
+    assert_eq!(refusal.to_string(), "bridge is shutting down");
+    assert!(started.elapsed() < BUDGET, "{:?}", started.elapsed());
+}
+
+#[test]
+fn should_read_a_request_that_arrived_before_shutdown() {
+    let stream = with_peer(|mut far| {
+        far.write_all(b"{\"op\":\"types\"}\n").unwrap();
+        thread::sleep(Duration::from_secs(3));
+    });
+    // The whole line is in the socket before the read starts.
+    thread::sleep(Duration::from_millis(50));
+    let shutdown = shutdown_requested();
+    let request =
+        read_request(Deadline::new(&stream, BOUND).or_until_shutdown(shutdown.as_fd())).unwrap();
+    assert_eq!(request, b"{\"op\":\"types\"}\n");
+}

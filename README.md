@@ -75,8 +75,11 @@ it: `--sync-text` below replaces it. Then run in a Fedora terminal:
 "$HOME/.local/share/claude-clipboard/claude-clipboard-host" serve --sync-text
 ```
 
-Leave the terminal open for now; closing it, Ctrl+C or SIGTERM stops the bridge,
-removes its socket and stops its text watcher. `--sync-text` copies plain text into X11 with
+Leave the terminal open for now; closing it, Ctrl+C or SIGTERM stops the bridge.
+It removes its socket at once and stops its text watcher, answers the requests
+it has already received, and tells a client still sending one that the bridge is
+shutting down. Started with SIGHUP ignored, as `nohup` starts it, the bridge
+keeps running when its terminal closes. `--sync-text` copies plain text into X11 with
 `xsel`. It checks the current content first and skips offers that contain an
 image, including mixed offers where an image comes with a text representation.
 If you do not need this, run `serve` without `--sync-text`.
@@ -204,7 +207,9 @@ scripts take their place. They cover:
   refuses a second instance, replacing a stale socket and refusing any other
   file at its path, the peer UID check and the concurrency limit, a deadline on
   each connection however slowly the peer sends or reads, and a clean exit on
-  SIGTERM, SIGINT or SIGHUP that waits for requests in flight;
+  SIGTERM, SIGINT or SIGHUP that removes the socket at once, turns away a
+  client still sending its request and waits for requests already received,
+  while a signal the bridge was started with ignored stays ignored;
 - tools: timeouts, reaping, and leaving alone the processes a tool that
   succeeded started, such as the daemon `xsel` keeps to own the selection;
 - text sync: the whole decision sequence, including skipping offers with an

@@ -1,5 +1,11 @@
-use crate::support::{Scratch, await_pid, running};
-use std::{fs, io::Write, os::unix::net::UnixListener, thread, time::Duration};
+use crate::support::{Scratch, await_pid, read_response, running};
+use std::{
+    fs,
+    io::Write,
+    os::unix::net::UnixListener,
+    thread,
+    time::{Duration, Instant},
+};
 
 #[test]
 fn should_refuse_a_second_instance_while_the_first_holds_the_lock() {
@@ -87,4 +93,36 @@ fn should_keep_a_signal_ignored_when_serve_inherits_it_ignored() {
     assert_eq!(response.header["ok"], true);
     server.signal("TERM");
     assert_eq!(server.wait().code(), Some(0));
+}
+
+#[test]
+fn should_unadvertise_at_once_and_turn_away_an_idle_peer_on_a_signal() {
+    let scratch = Scratch::new();
+    scratch.clipboard(b"image/png\n", b"");
+    let mut server = scratch.serve(&[]);
+    let idle = server.connect();
+    // Connections are accepted in order, so once this one is answered the idle
+    // one has been accepted and its worker is waiting for a request.
+    assert_eq!(server.request(b"{\"op\":\"types\"}\n").header["ok"], true);
+    let signalled = Instant::now();
+    server.signal("TERM");
+    while scratch.socket().exists() {
+        assert!(
+            signalled.elapsed() < Duration::from_secs(1),
+            "the socket outlived the signal"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    let response = read_response(idle);
+    assert_eq!(
+        response.header,
+        serde_json::json!({"error": "bridge is shutting down", "ok": false, "size": 0})
+    );
+    assert_eq!(server.wait().code(), Some(0));
+    // A request phase is 12 s; a drain that waited one out would take that.
+    assert!(
+        signalled.elapsed() < Duration::from_secs(2),
+        "{:?}",
+        signalled.elapsed()
+    );
 }

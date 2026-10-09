@@ -11,11 +11,10 @@ use crate::{
 };
 use std::{
     collections::HashSet,
-    env,
-    fs::{self, File},
+    env, fs,
     io::{self, IoSlice, Read, Write},
     os::{
-        fd::AsFd,
+        fd::{AsFd, BorrowedFd},
         unix::{
             fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt},
             net::{UnixListener, UnixStream},
@@ -35,12 +34,16 @@ use std::{
 const PHASE: Duration = Duration::from_secs(12);
 
 /// A connection whose reads and writes share one deadline. A socket timeout
-/// bounds a single call, and the kernel re-arms it within one large write, so
-/// the stream is non-blocking and every wait is a `poll` for the time that
-/// remains: a peer that trickles cannot stretch a phase past its budget.
+/// cannot give one, not even for a single call: the kernel takes it afresh for
+/// each buffer it allocates within a call, so a peer that keeps draining
+/// slowly never lets one large write time out. The stream is non-blocking
+/// instead, and every wait is a `poll` for the time that remains, so a peer
+/// that trickles cannot stretch a phase past its budget.
 pub(crate) struct Deadline<'a> {
     stream: &'a UnixStream,
     end: Instant,
+    /// Ends the phase early once readable.
+    stop: Option<BorrowedFd<'a>>,
 }
 
 impl<'a> Deadline<'a> {
@@ -50,6 +53,17 @@ impl<'a> Deadline<'a> {
         Self {
             stream,
             end: Instant::now() + budget,
+            stop: None,
+        }
+    }
+
+    /// Also ends the phase, with `bridge is shutting down`, once `stop` is
+    /// readable, as the wake pipe is from shutdown on. Only a wait ends early:
+    /// what the peer has already sent is still read.
+    pub(crate) fn or_until_shutdown(self, stop: BorrowedFd<'a>) -> Self {
+        Self {
+            stop: Some(stop),
+            ..self
         }
     }
 
@@ -64,12 +78,22 @@ impl<'a> Deadline<'a> {
             if remaining.is_zero() {
                 return Err(io::ErrorKind::TimedOut.into());
             }
-            match sys::poll(
-                &mut [Poll::new(self.stream.as_fd(), interest)],
-                Some(remaining),
-            ) {
+            // Without a stop, the second entry is a placeholder left unwatched.
+            let mut fds = [
+                Poll::new(self.stream.as_fd(), interest),
+                Poll::new(self.stop.unwrap_or(self.stream.as_fd()), Interest::Read),
+            ];
+            let watched = if self.stop.is_some() {
+                &mut fds[..]
+            } else {
+                &mut fds[..1]
+            };
+            match sys::poll(watched, Some(remaining)) {
                 Err(error) if error.kind() != io::ErrorKind::Interrupted => return Err(error),
                 _ => {}
+            }
+            if self.stop.is_some() && fds[1].ready() {
+                return Err(io::Error::other("bridge is shutting down"));
             }
         }
     }
@@ -111,15 +135,14 @@ impl Drop for Socket {
     }
 }
 
-/// What `serve` holds for as long as it runs. Fields drop in declaration
-/// order, and that order is the cleanup order: the watcher stops first, then
-/// the socket path is removed and the listener closes, and the lock is
-/// released last. An instance that unlocked before removing its path could
-/// delete the socket a successor had just bound there.
+/// What advertises the bridge, held until shutdown is requested and no
+/// longer. Fields drop in declaration order, and that order is the cleanup
+/// order: the watcher stops first, then the socket path is removed, then the
+/// listener closes, which resets any connection still queued on it. The lock
+/// is not here: it is released after every worker has finished.
 struct Bridge {
     _watcher: Option<Tool>,
     socket: Socket,
-    _lock: File,
 }
 
 /// One of the [`WORKERS`] places, released when the connection holding it is
@@ -153,9 +176,10 @@ fn admit<'a>(
 }
 
 /// Serves one admitted connection: its request, then its response, each within
-/// its own [`PHASE`].
-fn work(stream: &UnixStream) {
-    let result = read_request(Deadline::new(stream, PHASE))
+/// its own [`PHASE`]. A request still arriving when `shutdown` becomes
+/// readable is turned away; one that has arrived is answered.
+fn work(stream: &UnixStream, shutdown: BorrowedFd<'_>) {
+    let result = read_request(Deadline::new(stream, PHASE).or_until_shutdown(shutdown))
         .and_then(|request| respond_with(&request, clipboard::wayland));
     let _ = write_response(Deadline::new(stream, PHASE), result);
 }
@@ -207,19 +231,22 @@ pub(crate) fn serve(options: &ServeOptions) -> Result<()> {
     let bridge = Bridge {
         _watcher: watcher,
         socket,
-        _lock: lock,
     };
     println!(
         "Clipboard bridge: {}; allowed host UIDs: {:?}",
         bridge.socket.path.display(),
         allowed
     );
-    let listener = &bridge.socket.listener;
     let active = AtomicUsize::new(0);
     // The scope joins every worker before it returns, so no tool started for a
-    // connection outlives `serve`. Each worker is bounded by its deadlines, so
-    // the join is too.
-    thread::scope(|scope| {
+    // connection outlives `serve`. Each worker is bounded by its deadlines, and
+    // one still waiting for its request stops waiting at shutdown, so the join
+    // is bounded too.
+    let served = thread::scope(|scope| {
+        // Moved in, so it is dropped as the loop ends, before the scope joins
+        // a single worker: the bridge stops advertising itself first.
+        let bridge = bridge;
+        let listener = &bridge.socket.listener;
         loop {
             let mut ready = [
                 Poll::new(listener.as_fd(), Interest::Read),
@@ -266,15 +293,22 @@ pub(crate) fn serve(options: &ServeOptions) -> Result<()> {
             // to carry its refusal.
             let stream = Arc::new(stream);
             let worker = Arc::clone(&stream);
+            let shutdown = wake.as_fd();
             let started = thread::Builder::new().spawn_scoped(scope, move || {
                 let _slot = slot;
-                work(&worker);
+                work(&worker, shutdown);
             });
             if let Err(error) = started {
                 let _ = write_response(Deadline::new(&stream, PHASE), Err(error.into()));
             }
         }
-    })
+    });
+    // Released only now that every worker has finished, so a successor started
+    // during the drain fails on the lock as it would against a running bridge,
+    // and an instance never unlocks before removing its path, which could
+    // delete the socket a successor had just bound there.
+    drop(lock);
+    served
 }
 
 #[cfg(test)]
