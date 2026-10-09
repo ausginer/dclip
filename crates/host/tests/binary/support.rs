@@ -8,7 +8,7 @@
 use serde_json::Value;
 use std::{
     fs,
-    io::{BufRead, BufReader, Read, Write},
+    io::{self, BufRead, BufReader, Read, Write},
     os::unix::{fs::PermissionsExt, net::UnixStream},
     path::{Path, PathBuf},
     process::{Child, Command, ExitStatus, Output, Stdio},
@@ -285,6 +285,25 @@ pub fn read_response(mut stream: impl Read) -> Response {
         header: serde_json::from_slice(&bytes[..split]).unwrap(),
         payload: bytes[split + 1..].to_vec(),
     }
+}
+
+/// Reads one response by its framing: the header line, then exactly the
+/// `size` bytes it announces. A connection the bridge refused can end in a
+/// reset rather than an end of stream, and this never reads that far.
+pub fn read_framed(stream: impl Read) -> io::Result<Response> {
+    let mut reader = BufReader::new(stream);
+    let mut header = Vec::new();
+    reader.read_until(b'\n', &mut header)?;
+    if header.pop() != Some(b'\n') {
+        return Err(io::ErrorKind::UnexpectedEof.into());
+    }
+    let header: Value = serde_json::from_slice(&header)?;
+    let size = header["size"]
+        .as_u64()
+        .ok_or_else(|| io::Error::other(format!("no size in {header}")))?;
+    let mut payload = vec![0; size as usize];
+    reader.read_exact(&mut payload)?;
+    Ok(Response { header, payload })
 }
 
 pub fn signal_pid(pid: u32, signal: &str) {

@@ -1,7 +1,7 @@
-use crate::support::{PATIENCE, Scratch, await_pid, read_response, running};
+use crate::support::{PATIENCE, Scratch, await_pid, read_framed, read_response, running};
 use std::{
     fs,
-    io::{Read, Write},
+    io::Write,
     os::unix::net::{UnixListener, UnixStream},
     thread,
     time::{Duration, Instant},
@@ -220,27 +220,26 @@ fn should_refuse_a_connection_over_the_limit_and_keep_serving() {
     );
     drop(idle);
     // A place comes free once its worker has seen its peer go, which the
-    // test cannot observe, so it asks until a place has. A refused connection
-    // is closed with the request unread, which can reset it before the
-    // refusal is read, so a failed exchange is one more attempt.
+    // test cannot observe, so it asks until a place has, and only the limit's
+    // refusal is another attempt. A refused connection is closed with its
+    // request unread, so the send can fail after the refusal has already
+    // arrived; the response is read either way, and by its framing, because
+    // reading on to the end of the stream could meet the reset the unread
+    // request causes. Any other failure fails the test.
     let deadline = Instant::now() + PATIENCE;
     loop {
         let mut stream = server.connect();
-        let mut bytes = Vec::new();
-        let exchanged = stream
-            .write_all(b"{\"op\":\"types\"}\n")
-            .and_then(|()| stream.read_to_end(&mut bytes));
-        if exchanged.is_ok() {
-            let response = read_response(&bytes[..]);
-            if response.header["ok"] == true {
-                break;
-            }
-            assert_eq!(
-                response.header["error"], "too many concurrent clipboard requests",
-                "{:?}",
-                response.header
-            );
+        let sent = stream.write_all(b"{\"op\":\"types\"}\n");
+        let response = read_framed(&stream)
+            .unwrap_or_else(|error| panic!("{error}, after the send gave {sent:?}"));
+        if response.header["ok"] == true {
+            break;
         }
+        assert_eq!(
+            response.header["error"], "too many concurrent clipboard requests",
+            "{:?}",
+            response.header
+        );
         assert!(Instant::now() < deadline, "no place came free");
         thread::sleep(Duration::from_millis(10));
     }
