@@ -23,8 +23,9 @@ expect_file() {
     [[ -f "$2" && ! -L "$2" ]] || fail "$1: $2 is not a regular file"
     expect "$1: $2 is mode $3, owned by root" "$3 root:root" "$(stat -c '%a %U:%G' "$2")"
     if [[ $# -ge 4 ]]; then
-        cmp -s "$4" "$2" ||
-            fail "$1: $2 differs from the tracked $(basename "$4")"$'\n'"$(cmp "$4" "$2" 2>&1; sha256sum "$4" "$2"; wc -c "$4" "$2")"
+        # By digest, because coreutils is in every check image and cmp is not.
+        [[ "$(sha256sum <"$4")" == "$(sha256sum <"$2")" ]] ||
+            fail "$1: $2 differs from the tracked $(basename "$4")"
         pass "$1: $2 is byte-identical to the tracked $(basename "$4")"
     fi
 }
